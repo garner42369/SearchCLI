@@ -1,0 +1,73 @@
+{
+  "name": "viking-cli",
+  "version": "0.1.0",
+  "description": "CLI and installable skills for Viking AI Search",
+  "bin": {
+    "viking": "./bin/run.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "skills",
+    "README.md",
+    "package.json"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "clean:dist": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "validate:skills": "node ./scripts/validate-skills.mjs",
+    "build": "npm run clean:dist && tsc -p tsconfig.json",
+    "dev": "tsx ./src/index.ts",
+    "start": "node ./bin/run.js",
+    "prepack": "npm run build",
+    "standalone": "tsx ./src/standalone.ts",
+    "test:acceptance:dist": "npm run build && node ./scripts/run-acceptance.cjs --dist",
+    "test:acceptance:dist:live": "npm run build && node ./scripts/run-acceptance.cjs --dist --live",
+    "test:acceptance:binary": "node ./scripts/package-binary.mjs node20-macos-arm64 && node ./scripts/run-acceptance.cjs --binary",
+    "test:acceptance:binary:live": "node ./scripts/package-binary.mjs node20-macos-arm64 && node ./scripts/run-acceptance.cjs --binary --live",
+    "test:acceptance": "npm run test:acceptance:dist && npm run test:acceptance:binary",
+    "test:acceptance:live": "npm run test:acceptance:dist:live && npm run test:acceptance:binary:live",
+    "dist:bundle": "node ./scripts/build-standalone.mjs",
+    "dist:binary": "node ./scripts/package-binary.mjs",
+    "dist:matrix": "node ./scripts/package-binary.mjs node20-macos-arm64 node20-macos-x64 node20-linux-x64 node20-win-x64"
+  },
+  "dependencies": {
+    "@oclif/core": "^4.5.5",
+    "@volcengine/openapi": "^1.36.1",
+    "csv-parse": "^5.6.0",
+    "jsonrepair": "^3.13.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^24.7.2",
+    "@yao-pkg/pkg": "^6.14.2",
+    "esbuild": "^0.28.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  },
+  "oclif": {
+    "bin": "viking",
+    "commands": "./dist/commands",
+    "topicSeparator": " "
+  },
+  "pkg": {
+    "scripts": [
+      "node_modules/csv-parse/**/*.js",
+      "node_modules/csv-parse/dist/cjs/**/*.cjs",
+      "node_modules/csv-parse/dist/cjs/**/*.cts",
+      "node_modules/typescript/**/*.js",
+      "node_modules/typescript/lib/**/*.d.ts"
+    ],
+    "assets": [
+      "skills/manifest.json",
+      "skills/**/*",
+      "node_modules/csv-parse/package.json",
+      "node_modules/csv-parse/dist/cjs/index.cjs",
+      "node_modules/csv-parse/dist/cjs/sync.cjs",
+      "node_modules/csv-parse/dist/cjs/stream.cjs",
+      "node_modules/typescript/package.json"
+    ]
+  }
+}

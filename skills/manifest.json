@@ -1,0 +1,38 @@
+{
+  "skills": [
+    {
+      "name": "viking-chat",
+      "files": [
+        "viking-chat/SKILL.md"
+      ]
+    },
+    {
+      "name": "viking-item-onboarding",
+      "files": [
+        "viking-item-onboarding/SKILL.md",
+        "viking-item-onboarding/references/agent-prompt-template.md",
+        "viking-item-onboarding/references/review-checklist.md",
+        "viking-item-onboarding/references/walkthrough-card-full.md",
+        "viking-item-onboarding/references/walkthrough-csv.md"
+      ]
+    },
+    {
+      "name": "viking-recommend",
+      "files": [
+        "viking-recommend/SKILL.md"
+      ]
+    },
+    {
+      "name": "viking-search",
+      "files": [
+        "viking-search/SKILL.md"
+      ]
+    },
+    {
+      "name": "viking-shared",
+      "files": [
+        "viking-shared/SKILL.md"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "filterableFields": ["status", "category", "brand", "create_at"],
+  "sortableFields": ["create_at", "status", "brand"],
+  "searchableFields": ["title", "category", "brand", "description"]
+}

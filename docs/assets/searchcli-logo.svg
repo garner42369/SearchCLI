@@ -1,0 +1,50 @@
+<!--
+Copyright (c) 2026 ByteDance Ltd. and/or its affiliates
+SPDX-License-Identifier: Apache-2.0
+-->
+<svg width="700" height="200" viewBox="0 0 700 200" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">SearchCLI logo</title>
+  <desc id="desc">A transparent-background logo with a search and terminal motif next to the SearchCLI wordmark.</desc>
+  <defs>
+    <linearGradient id="signal" x1="24" y1="28" x2="187" y2="192" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00C2FF"/>
+      <stop offset="0.55" stop-color="#2B7FFF"/>
+      <stop offset="1" stop-color="#00D38A"/>
+    </linearGradient>
+    <linearGradient id="signal-soft" x1="54" y1="43" x2="180" y2="177" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6BE8FF"/>
+      <stop offset="1" stop-color="#7CFF9B"/>
+    </linearGradient>
+    <linearGradient id="cli" x1="438" y1="44" x2="560" y2="142" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#20C9FF"/>
+      <stop offset="1" stop-color="#00D38A"/>
+    </linearGradient>
+    <filter id="glow" x="0" y="0" width="220" height="220" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <g transform="translate(18 0)">
+    <g filter="url(#glow)">
+      <path d="M109 34C70 34 37.9533 64.9983 34.9083 103.272C32.6055 132.223 44.2676 158.507 64.828 174.241" stroke="url(#signal)" stroke-width="14" stroke-linecap="round"/>
+      <path d="M155.442 52.2942C172.752 63.8776 184 83.6439 184 106.038C184 141.691 155.691 170 120.038 170C108.702 170 98.0494 167.132 88.7681 162.073" stroke="#0F1B36" stroke-width="14" stroke-linecap="round"/>
+      <circle cx="114" cy="108" r="53" fill="#F6FBFF" fill-opacity="0.96" stroke="url(#signal)" stroke-width="10"/>
+      <path d="M149.121 144.121L184 179" stroke="url(#signal)" stroke-width="14" stroke-linecap="round"/>
+      <path d="M86 89L107 109L86 129" stroke="url(#signal-soft)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M117 129H144" stroke="#0F1B36" stroke-width="12" stroke-linecap="round"/>
+      <circle cx="36" cy="142" r="7" fill="#00C2FF"/>
+      <circle cx="175" cy="68" r="7" fill="#00D38A"/>
+      <circle cx="193" cy="148" r="5" fill="#2B7FFF"/>
+    </g>
+  </g>
+
+  <g transform="translate(242 0)">
+    <text x="0" y="118" fill="#0F1B36" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="84" font-weight="800" letter-spacing="-2.8">
+      Search<tspan fill="url(#cli)">CLI</tspan>
+    </text>
+  </g>
+</svg>

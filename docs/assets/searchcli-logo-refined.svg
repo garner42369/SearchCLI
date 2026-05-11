@@ -1,0 +1,48 @@
+<!--
+Copyright (c) 2026 ByteDance Ltd. and/or its affiliates
+SPDX-License-Identifier: Apache-2.0
+-->
+<svg width="700" height="200" viewBox="0 0 700 200" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">SearchCLI refined logo</title>
+  <desc id="desc">A transparent refined SearchCLI logo with a search lens, terminal prompt, and information-flow arcs beside the SearchCLI wordmark.</desc>
+  <defs>
+    <linearGradient id="arcBlue" x1="30" y1="16" x2="165" y2="155" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#57D6FF"/>
+      <stop offset="0.52" stop-color="#2583FF"/>
+      <stop offset="1" stop-color="#1D4ED8"/>
+    </linearGradient>
+    <linearGradient id="arcGreen" x1="90" y1="82" x2="190" y2="180" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7AF6D3"/>
+      <stop offset="1" stop-color="#08C989"/>
+    </linearGradient>
+    <linearGradient id="cliWord" x1="444" y1="38" x2="570" y2="126" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22C7FF"/>
+      <stop offset="1" stop-color="#13D58B"/>
+    </linearGradient>
+    <linearGradient id="lensStroke" x1="72" y1="56" x2="155" y2="141" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#65DEFF"/>
+      <stop offset="1" stop-color="#1E7FFF"/>
+    </linearGradient>
+  </defs>
+
+  <g transform="translate(18 0)">
+      <path d="M97 28C64.5584 30.7382 37.2552 55.8649 31.5466 87.7803C27.2865 111.596 34.7888 135.277 50.9232 152.769" stroke="url(#arcBlue)" stroke-width="12" stroke-linecap="round"/>
+      <path d="M153.97 48.5985C171.557 61.4823 182.945 82.2752 182.945 105.729C182.945 144.722 151.331 176.336 112.338 176.336C104.659 176.336 97.2663 175.111 90.3458 172.841" stroke="#10214A" stroke-width="12" stroke-linecap="round"/>
+      <path d="M145.811 137.425L180.326 171.941" stroke="url(#arcGreen)" stroke-width="12" stroke-linecap="round"/>
+      <circle cx="110.702" cy="104.702" r="49.702" fill="#F8FBFF"/>
+      <circle cx="110.702" cy="104.702" r="45.202" stroke="url(#lensStroke)" stroke-width="9"/>
+      <circle cx="110.702" cy="104.702" r="49.702" fill="url(#lensStroke)" fill-opacity="0.06"/>
+      <circle cx="110.702" cy="104.702" r="43.5" stroke="#56CBFF" stroke-opacity="0.18" stroke-width="4"/>
+      <path d="M86.5 82.5L105.5 103L86.5 123.5" stroke="#74F0D0" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M118.5 123.5H141.5" stroke="#10214A" stroke-width="10" stroke-linecap="round"/>
+      <circle cx="31" cy="127" r="5.5" fill="#25B5FF"/>
+      <circle cx="170" cy="65" r="6" fill="#11D28D"/>
+      <circle cx="188" cy="132" r="4.5" fill="#2F7BFF"/>
+  </g>
+
+  <g transform="translate(240 0)">
+    <text x="0" y="118" fill="#0F1B36" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="84" font-weight="800" letter-spacing="-3">
+      Search<tspan fill="url(#cliWord)">CLI</tspan>
+    </text>
+  </g>
+</svg>

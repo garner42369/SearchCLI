@@ -1,0 +1,17 @@
+[
+  {
+    "id": "catalog-1",
+    "query": {
+      "text": "wireless headphones"
+    },
+    "notes": "Results are over-ranking accessories instead of the main product.",
+    "expected_ids": ["ITEM001", "ITEM003"]
+  },
+  {
+    "id": "catalog-2",
+    "query": {
+      "text": "travel backpack"
+    },
+    "expected_ids": ["ITEM002"]
+  }
+]
