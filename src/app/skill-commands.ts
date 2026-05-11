@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { parseArgs } from 'node:util';
-import { hasHelpFlag, renderUsageBlock } from '../core/help-utils';
+import { isDomainHelpRequest, renderUsageBlock } from '../core/help-utils';
 import { printOutput } from '../core/output-format';
 import {
   createRepoSkillScaffold,
@@ -20,7 +20,7 @@ import {
 } from '../skills/repo-skills';
 
 export async function runSkillDomainFromArgv(argv: string[]): Promise<boolean> {
-  if (argv.length === 0 || hasHelpFlag(argv)) {
+  if (isDomainHelpRequest(argv)) {
     printSkillHelp();
     return true;
   }
@@ -78,25 +78,25 @@ export async function runSkillDomainFromArgv(argv: string[]): Promise<boolean> {
 
 export function printSkillHelp(): void {
   const examples = [
-    '  viking skill list',
-    '  viking skill list --category search',
-    '  viking skill show --name viking-shared',
-    '  viking skill search --query "search debug"',
-    '  viking skill install all',
-    '  viking skill install viking-shared viking-search --dest /tmp/viking-skills',
-    '  viking skill init viking-demo-skill',
-    '  viking skill validate'
+    '  vs skill list',
+    '  vs skill list --category search',
+    '  vs skill show --name vs-shared',
+    '  vs skill search --query "search debug"',
+    '  vs skill install all',
+    '  vs skill install vs-shared vs-search --dest /tmp/viking-skills',
+    '  vs skill init viking-demo-skill',
+    '  vs skill validate'
   ];
 
   console.log(`${renderUsageBlock(
     [
-      'viking skill list',
-      'viking skill list [--category <name>]',
-      'viking skill show --name <skill-name>',
-      'viking skill search --query <text> [--category <name>] [--max-results <n>]',
-      'viking skill install <skill-name...|all> [--target global|codex|agents|both] [--dest <dir>] [--force]',
-      'viking skill init <skill-name> [--root <dir>] [--category <name>] [--keywords <csv>] [--commands <csv>] [--force]',
-      'viking skill validate [--root <dir>]'
+      'vs skill list',
+      'vs skill list [--category <name>]',
+      'vs skill show --name <skill-name>',
+      'vs skill search --query <text> [--category <name>] [--max-results <n>]',
+      'vs skill install <skill-name...|all> [--target global|codex|agents|trae|trae-cn] [--dest <dir>] [--force]',
+      'vs skill init <skill-name> [--root <dir>] [--category <name>] [--keywords <csv>] [--commands <csv>] [--force]',
+      'vs skill validate [--root <dir>]'
     ]
   )}
 
@@ -122,7 +122,7 @@ export async function runSkillListCommand(
     cliVersion: skills[0]?.compatibility.cliVersion ?? '0.1.0',
     count: skills.length,
     categories: summarizeCategories(skills),
-    recommendedQueries: ['search debug', 'data import', 'app activate', 'chat run'],
+    recommendedQueries: ['search debug', 'data import', 'app dataset bind', 'chat run'],
     skills
   });
 }
@@ -152,7 +152,7 @@ export async function runSkillSearchCommand(
     count: skills.length,
     sourceCatalog: getRepoSkillsRoot(root),
     category: category ?? null,
-    recommendedQueries: ['search debug', 'data import', 'app activate', 'chat run'],
+    recommendedQueries: ['search debug', 'data import', 'app dataset bind', 'chat run'],
     skills
   });
 }
@@ -211,9 +211,9 @@ export async function runSkillInitCommand(
     validationOk: result.validation.errors.length === 0,
     validationErrors: result.validation.errors,
     recommendedNextSteps: [
-      `viking skill show --name ${result.name}${options.root ? ` --root ${result.root}` : ''}`,
-      `viking skill validate${options.root ? ` --root ${result.root}` : ''}`,
-      `viking skill install ${result.name}${options.root ? ` --root ${result.root}` : ''}`
+      `vs skill show --name ${result.name}${options.root ? ` --root ${result.root}` : ''}`,
+      `vs skill validate${options.root ? ` --root ${result.root}` : ''}`,
+      `vs skill install ${result.name}${options.root ? ` --root ${result.root}` : ''}`
     ]
   });
 }
@@ -400,10 +400,11 @@ function parseSkillInstallTargetMode(value?: string): SkillInstallTargetMode | u
     case 'auto':
     case 'codex':
     case 'agents':
-    case 'both':
+    case 'trae':
+    case 'trae-cn':
       return value;
     default:
-      throw new Error(`Unsupported skill install target: ${value}. Use one of: global, codex, agents, both.`);
+      throw new Error(`Unsupported skill install target: ${value}. Use one of: global, codex, agents, trae, trae-cn.`);
   }
 }
 

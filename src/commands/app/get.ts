@@ -12,7 +12,7 @@ export default class AppGet extends Command {
 
   static override flags = {
     ...serviceFlags,
-    id: Flags.string()
+    id: Flags.string({ description: 'Viking application ID.' })
   };
 
   async run(): Promise<void> {

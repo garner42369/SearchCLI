@@ -50,7 +50,7 @@ export async function requestOpenApiJson<T = unknown>(
     return requestJson<T>(config, method, pathname, payload, params);
   }
 
-  return sendSignedJson<T>(config, method, translated, payload);
+  return sendSignedJson<T>(config, method, translated, withDefaultProjectName(payload, config.projectName));
 }
 
 async function sendSignedJson<T = unknown>(
@@ -72,9 +72,28 @@ async function sendSignedJson<T = unknown>(
   const rawText = await response.text();
   const parsed = parseMaybeJson(rawText);
   if (!response.ok) {
+    console.error(
+      `[HTTP Error] Method: ${method} URL: ${url.toString()}\nPayload: ${body}\nResponse: ${typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2)}`
+    );
     throw new Error(
       `Request failed: ${response.status} ${response.statusText}\n${typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2)}`
     );
+  }
+
+  // Detect logical errors returned in the OpenApi wrapper even if HTTP status is 200 OK
+  if (
+    typeof parsed === 'object' &&
+    parsed !== null &&
+    'ResponseMetadata' in parsed &&
+    typeof (parsed as any).ResponseMetadata === 'object' &&
+    (parsed as any).ResponseMetadata !== null &&
+    'Error' in (parsed as any).ResponseMetadata &&
+    (parsed as any).ResponseMetadata.Error !== null
+  ) {
+    const apiError = (parsed as any).ResponseMetadata.Error;
+    const code = apiError.Code || 'UnknownError';
+    const message = apiError.Message || 'An unknown API error occurred.';
+    throw new Error(`API Error [${code}]: ${message}\nPayload: ${body}`);
   }
 
   return parsed as T;
@@ -139,7 +158,7 @@ async function buildHeaders(
         headers,
         body: body ?? ''
       },
-      'aisearch'
+      config.service
     );
 
     signer.addAuthorization({
@@ -152,7 +171,7 @@ async function buildHeaders(
   }
 
   throw new Error(
-    'Missing Viking auth. Run `viking auth import-env`, `viking auth login`, set VIKING_AK/VIKING_SK, or pass --ak/--sk.'
+    'Missing Viking auth. Run `vs auth import-env`, `vs auth login`, set VIKING_AK/VIKING_SK, or pass --ak/--sk.'
   );
 }
 
@@ -176,4 +195,19 @@ function appendQueryParams(url: URL, params?: Record<string, string>): void {
 function shouldSendBody(method: SignedHttpMethod, payload: unknown): boolean {
   if (payload === undefined) return false;
   return method !== 'GET' && method !== 'DELETE';
+}
+
+function withDefaultProjectName(payload: unknown, projectName: string): unknown {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return payload;
+  }
+
+  if ('ProjectName' in (payload as Record<string, unknown>)) {
+    return payload;
+  }
+
+  return {
+    ...(payload as Record<string, unknown>),
+    ProjectName: projectName
+  };
 }

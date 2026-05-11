@@ -218,27 +218,27 @@ function deriveNextActions(phase: AppStatusSnapshot['phase'], applicationId: str
   switch (phase) {
     case 'unbound':
       return [
-        `Bind a dataset: viking app dataset bind --application-id ${applicationId} --dataset-id <dataset>`,
-        `Update app config: viking app dataset-config update --application-id ${applicationId} --dataset-id <dataset> --field-config @config.json`
+        `Bind a dataset: vs app dataset bind --application-id ${applicationId} --dataset-id <dataset>`,
+        `Update app config: vs app dataset-config update --application-id ${applicationId} --dataset-id <dataset> --field-config @config.json`
       ];
     case 'config_saved':
       return [
-        `Check config state: viking app dataset-config list --application-id ${applicationId}`,
+        `Check config state: vs app dataset-config list --application-id ${applicationId}`,
         `If needed, update the config again so it can enter the activation flow.`
       ];
     case 'activating':
     case 'waiting_runtime':
       return [
-        `Wait for the app to become ready: viking app wait-ready --application-id ${applicationId}`,
-        `Inspect current state: viking app status --application-id ${applicationId}`
+        `Wait for the app to become ready: vs app wait-ready --application-id ${applicationId}`,
+        `Inspect current state: vs app status --application-id ${applicationId}`
       ];
     case 'ready':
       return [
-        `Run search: viking search run --application-id ${applicationId} --query "<query>"`,
-        `Run conversational search: viking chat run --application-id ${applicationId} --message "<message>"`
+        `Run search: vs search run --application-id ${applicationId} --query "<query>"`,
+        `Run conversational search: vs chat run --application-id ${applicationId} --message "<message>"`
       ];
     default:
-      return [`Inspect current state: viking app status --application-id ${applicationId}`];
+      return [`Inspect current state: vs app status --application-id ${applicationId}`];
   }
 }
 

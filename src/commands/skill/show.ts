@@ -9,7 +9,7 @@ export default class SkillShow extends Command {
   static override description = 'Show one Viking skill in detail.';
 
   static override examples = [
-    '<%= config.bin %> skill show --name viking-shared'
+    '<%= config.bin %> skill show --name vs-shared'
   ];
 
   static override flags = {

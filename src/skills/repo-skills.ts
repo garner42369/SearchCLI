@@ -49,7 +49,6 @@ const GLOBAL_AGENT_SKILL_DIRS = [
   '.adal/skills'
 ] as const;
 const FALLBACK_COMMANDS = [
-  'app activate',
   'app create',
   'app dataset bind',
   'app dataset-config get',
@@ -136,7 +135,7 @@ export interface RepoSkillCommandSummary {
 
 export type RepoSkillCategory = typeof REPO_SKILL_CATEGORIES[number];
 export type RepoSkillTarget = typeof REPO_SKILL_TARGETS[number];
-export type SkillInstallTargetMode = 'auto' | 'global' | 'codex' | 'agents' | 'both';
+export type SkillInstallTargetMode = 'auto' | 'global' | 'codex' | 'agents' | 'trae' | 'trae-cn';
 
 export interface RepoSkillValidationResult {
   root: string;
@@ -235,7 +234,8 @@ export function validateRepoSkills(root = getRepoSkillsRoot()): RepoSkillValidat
   const availableCommands = listAvailableVikingCommands();
   const manifest = readRepoSkillManifest(root);
   const embedded = shouldUseEmbeddedRepoSkills(root, manifest);
-  if (!fs.existsSync(root) && !manifest && !embedded) {
+  const fileSystemSkills = embedded ? [] : listRepoSkillDirectories(root);
+  if (fileSystemSkills.length === 0 && !manifest && !embedded) {
     return {
       root,
       cliVersion: VERSION,
@@ -247,13 +247,11 @@ export function validateRepoSkills(root = getRepoSkillsRoot()): RepoSkillValidat
 
   const names = embedded
     ? Object.keys(EMBEDDED_REPO_SKILLS).sort((left, right) => left.localeCompare(right))
+    : fileSystemSkills.length > 0
+    ? fileSystemSkills
     : manifest
     ? manifest.skills.map(skill => skill.name).sort((left, right) => left.localeCompare(right))
-    : fs
-        .readdirSync(root, { withFileTypes: true })
-        .filter(entry => entry.isDirectory())
-        .map(entry => entry.name)
-        .sort((left, right) => left.localeCompare(right));
+    : [];
 
   const errors: string[] = [];
   const seen = new Set<string>();
@@ -362,7 +360,7 @@ export function validateRepoSkills(root = getRepoSkillsRoot()): RepoSkillValidat
       preconditions,
       workflow,
       constraints,
-      installCommand: `viking skill install ${name}`,
+      installCommand: `vs skill install ${name}`,
       sourcePath: skillFile,
       kind: 'repo',
       installable: true,
@@ -416,7 +414,9 @@ export function installRepoSkills(options: InstallRepoSkillsOptions = {}): Insta
   const targetMode = options.targetMode ?? 'global';
   const targets = resolveSkillInstallTargets(targetMode, options.dest);
   if (targets.length === 0) {
-    throw new Error('No skill installation target was resolved.');
+    throw new Error(
+      'No existing skill installation target was found. Use --target trae|trae-cn|codex|agents or --dest <dir>.'
+    );
   }
 
   const allSkills = validation.skills.map(skill => skill.name);
@@ -456,10 +456,12 @@ export function installRepoSkills(options: InstallRepoSkillsOptions = {}): Insta
       }
       if (embedded) {
         writeEmbeddedRepoSkillFiles(skill.name, targetDir);
+      } else if (fs.existsSync(sourceDir)) {
+        fs.cpSync(sourceDir, targetDir, { recursive: true });
       } else if (manifest) {
         copyRepoSkillFilesFromManifest(validation.root, manifest, skill.name, targetDir);
       } else {
-        fs.cpSync(sourceDir, targetDir, { recursive: true });
+        throw new Error(`Skill source not found: ${sourceDir}`);
       }
       installed.push({ name: skill.name, target });
     }
@@ -560,25 +562,30 @@ export function resolveSkillInstallTargets(mode: SkillInstallTargetMode = 'globa
   const agentsHome = process.env.AGENTS_HOME || path.join(os.homedir(), '.agents');
   const codexDest = path.join(codexHome, 'skills');
   const agentsDest = path.join(agentsHome, 'skills');
+  const traeDest = path.join(process.env.TRAE_HOME || path.join(os.homedir(), '.trae'), 'skills');
+  const traeCnDest = path.join(process.env.TRAE_CN_HOME || path.join(os.homedir(), '.trae-cn'), 'skills');
   const globalTargets = dedupe([
     codexDest,
     agentsDest,
     ...GLOBAL_AGENT_SKILL_DIRS.map(relativePath => path.join(os.homedir(), relativePath))
   ]);
+  const existingGlobalTargets = globalTargets.filter(target => fs.existsSync(target));
 
   switch (mode) {
     case 'global':
-      return globalTargets;
+      return existingGlobalTargets;
     case 'codex':
       return [codexDest];
     case 'agents':
       return [agentsDest];
-    case 'both':
-      return [codexDest, agentsDest];
+    case 'trae':
+      return [traeDest];
+    case 'trae-cn':
+      return [traeCnDest];
     case 'auto':
-      return globalTargets;
+      return existingGlobalTargets;
     default:
-      return globalTargets;
+      return existingGlobalTargets;
   }
 }
 
@@ -722,17 +729,26 @@ function dedupe(values: string[]): string[] {
 function candidateRepoSkillRoots(): string[] {
   const candidates = [
     path.resolve(__dirname, '..', '..', 'skills'),
-    path.resolve(process.cwd(), 'skills'),
     path.resolve(path.dirname(process.execPath), '..', 'skills'),
-    path.resolve(path.dirname(process.execPath), 'skills')
+    path.resolve(path.dirname(process.execPath), 'skills'),
+    path.resolve(process.cwd(), 'skills')
   ];
 
   return dedupe(candidates);
 }
 
-function shouldUseEmbeddedRepoSkills(root: string, manifest?: RepoSkillManifest): boolean {
+function listRepoSkillDirectories(root: string): string[] {
+  if (!fs.existsSync(root)) return [];
+  return fs
+    .readdirSync(root, { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .map(entry => entry.name)
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function shouldUseEmbeddedRepoSkills(_root: string, _manifest?: RepoSkillManifest): boolean {
   const pkgProcess = globalThis.process as NodeJS.Process & { pkg?: unknown };
-  return Boolean(pkgProcess.pkg) && !manifest && Object.keys(EMBEDDED_REPO_SKILLS).length > 0;
+  return Boolean(pkgProcess.pkg) && Object.keys(EMBEDDED_REPO_SKILLS).length > 0;
 }
 
 function readRepoSkillManifest(root: string): RepoSkillManifest | undefined {
@@ -820,7 +836,7 @@ TODO describe when external agents should use this skill.
 
 ## Preconditions
 
-- Confirm the SearchCLI is installed and available as \`viking\`
+- Confirm the SearchCLI is installed and available as \`vs\`
 - Confirm authentication and environment context are ready before running write commands
 - Update the TODO notes in this template before treating the skill as production-ready
 
@@ -834,7 +850,7 @@ ${workflowBullets}
 
 ## Constraints
 
-- Keep the workflow focused on the public \`viking\` command surface
+- Keep the workflow focused on the public \`vs\` command surface
 - Replace the TODO placeholders in this file before shipping the skill to other agents
 `;
 }

@@ -6,7 +6,14 @@ import { runAppDatasetConfigGetCommand } from '../../../app/product-commands';
 import { serviceFlags } from '../../../command-support/service-flags';
 
 export default class AppDatasetConfigGet extends Command {
-  static override description = 'Get a single application dataset config.';
+  static override description =
+    'Get a single application dataset config. Use --full when you need the raw response payload instead of the compact summary.';
+
+  static override examples = [
+    '<%= config.bin %> app dataset-config get --application-id 123 --dataset-id 456',
+    '<%= config.bin %> app dataset-config get --application-id 123 --dataset-id 456 --field-config-version 3',
+    '<%= config.bin %> app dataset-config get --application-id 123 --dataset-id 456 --full'
+  ];
 
   static override flags = {
     ...serviceFlags,

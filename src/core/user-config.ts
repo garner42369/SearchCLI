@@ -19,6 +19,8 @@ import { ensureDir, writeJson } from './files';
 
 const DEFAULT_BASE_URL = 'https://aisearch.cn-beijing.volces.com';
 const DEFAULT_REGION = 'cn-beijing';
+const DEFAULT_SERVICE = 'aisearch';
+const DEFAULT_PROJECT_NAME = 'default';
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_PAGE_SIZE = 10;
 const DEFAULT_OUTPUT_DIR = '.viking/reports';
@@ -30,6 +32,7 @@ export const DEFAULT_AUTH_PROFILE = DEFAULT_CREDENTIAL_PROFILE;
 
 const cliProfileSchema = z.object({
   baseUrl: z.string().url().optional(),
+  projectName: z.string().min(1).optional(),
   region: z.string().min(1).optional(),
   credentialStore: credentialStoreModeSchema.optional(),
   timeoutMs: z.number().int().positive().optional()
@@ -37,11 +40,13 @@ const cliProfileSchema = z.object({
 
 const cliConfigSchema = z.object({
   baseUrl: z.string().url().optional(),
+  service: z.string().min(1).optional(),
   accessKeyId: z.string().min(1).optional(),
   secretKey: z.string().min(1).optional(),
   activeProfile: z.string().min(1).optional(),
   profiles: z.record(cliProfileSchema).optional(),
   credentialStore: credentialStoreModeSchema.optional(),
+  projectName: z.string().min(1).optional(),
   region: z.string().min(1).optional(),
   timeoutMs: z.number().int().positive().optional(),
   defaultPageSize: z.number().int().positive().optional(),
@@ -63,11 +68,13 @@ export type VikingCliProfile = z.infer<typeof cliProfileSchema>;
 export interface ResolvedCliDefaults {
   activeProfile: string;
   baseUrl: string;
+  service: string;
   accessKeyId?: string;
   secretKey?: string;
   credentialStore: CredentialStoreMode;
   resolvedCredentialStoreMode: CredentialStoreBackend;
-  authSource: 'flag' | 'env' | 'secure-store' | 'legacy-config' | 'none';
+  authSource: 'flag' | 'env' | 'secure-store' | 'none';
+  projectName: string;
   region: string;
   timeoutMs: number;
   defaultPageSize: number;
@@ -85,6 +92,7 @@ export interface ResolvedCliDefaults {
 
 const configKeySpecs = {
   'base-url': { property: 'baseUrl', type: 'string', secret: false },
+  'project-name': { property: 'projectName', type: 'string', secret: false },
   ak: { property: 'accessKeyId', type: 'string', secret: false, visible: false, managedBy: 'auth' },
   sk: { property: 'secretKey', type: 'string', secret: true, visible: false, managedBy: 'auth' },
   'credentials-store': { property: 'credentialStore', type: 'string', secret: false },
@@ -215,18 +223,14 @@ export function resolveCliDefaults(input: Partial<ResolvedCliDefaults> = {}, cus
         ? 'env'
         : credentialLookup.credentials
           ? 'secure-store'
-          : stored.accessKeyId || stored.secretKey
-            ? 'legacy-config'
-            : 'none';
+          : 'none';
 
   if (
     credentialLoadError &&
     !input.accessKeyId &&
     !input.secretKey &&
     !process.env.VIKING_AK &&
-    !process.env.VIKING_SK &&
-    !stored.accessKeyId &&
-    !stored.secretKey
+    !process.env.VIKING_SK
   ) {
     throw credentialLoadError;
   }
@@ -234,19 +238,19 @@ export function resolveCliDefaults(input: Partial<ResolvedCliDefaults> = {}, cus
   return {
     activeProfile,
     baseUrl: input.baseUrl ?? process.env.VIKING_BASE_URL ?? profileConfig.baseUrl ?? stored.baseUrl ?? DEFAULT_BASE_URL,
+    service: input.service ?? stored.service ?? DEFAULT_SERVICE,
     accessKeyId:
       input.accessKeyId ??
       process.env.VIKING_AK ??
-      credentialLookup.credentials?.accessKeyId ??
-      stored.accessKeyId,
+      credentialLookup.credentials?.accessKeyId,
     secretKey:
       input.secretKey ??
       process.env.VIKING_SK ??
-      credentialLookup.credentials?.secretKey ??
-      stored.secretKey,
+      credentialLookup.credentials?.secretKey,
     credentialStore,
     resolvedCredentialStoreMode: credentialLookup.backend ?? credentialStatus.resolvedMode,
     authSource,
+    projectName: input.projectName ?? process.env.VIKING_PROJECT_NAME ?? profileConfig.projectName ?? stored.projectName ?? DEFAULT_PROJECT_NAME,
     region: input.region ?? process.env.VIKING_REGION ?? profileConfig.region ?? stored.region ?? DEFAULT_REGION,
     timeoutMs:
       input.timeoutMs ??

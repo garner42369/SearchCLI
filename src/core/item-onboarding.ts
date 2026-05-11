@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { ensureDir, slugify, writeJson, writeText } from './files';
+import { inferSchemaMetadataWithPrompt } from './schema-prompt-inference';
 
 export type ItemSourceFormat = 'json' | 'jsonl' | 'csv';
 export type ItemFieldType =
@@ -65,6 +66,8 @@ export interface ItemFieldProfile {
   examples: unknown[];
   roles: string[];
   warnings: string[];
+  meaning?: string;
+  fields?: ItemFieldProfile[];
 }
 
 export interface ItemProfileResult {
@@ -96,12 +99,14 @@ export interface ItemProfileResult {
 
 export interface ItemPlanOptions {
   file: string;
+  datasetType?: 'item' | 'video';
   goal?: string;
   outputDir?: string;
   datasetName?: string;
   applicationName?: string;
   force?: boolean;
   projectName?: string;
+  skipApp?: boolean;
 }
 
 export interface ItemPlanResult {
@@ -126,6 +131,9 @@ export interface ItemApplyPlanOptions {
   searchQuery?: string;
   chatMessage?: string;
   confirmReview?: boolean;
+  interactiveReview?: boolean;
+  reviewer?: string;
+  reviewNotes?: string;
   confirmRecommendEntryBinding?: boolean;
   force?: boolean;
   recommendSceneType?: string;
@@ -134,6 +142,7 @@ export interface ItemApplyPlanOptions {
   recommendUserId?: string;
   recommendParentId?: string;
   dryRun?: boolean;
+  skipApp?: boolean;
 }
 
 export interface ItemPlanFile {
@@ -158,6 +167,7 @@ export interface ItemPlanFile {
     fieldConfig: string;
     onlineConfig: string;
     validation: string;
+    reviewConfirmation: string;
     datasetCreate: string;
     appCreate: string;
     schemaCheck: string;
@@ -170,6 +180,7 @@ export interface ItemPlanFile {
   defaults: {
     searchQuery: string;
     chatMessage: string;
+    datasetType: 'item' | 'video';
     search: {
       sceneName: string;
       sceneDescription: string;
@@ -184,8 +195,30 @@ export interface ItemPlanFile {
       userId: string;
       parentItemId: string | null;
     };
+    skipApp?: boolean;
   };
   reviewChecklist: string[];
+}
+
+export interface ItemReviewConfirmationFile {
+  version: 1;
+  status: 'pending' | 'confirmed';
+  confirmedBy: string;
+  confirmedAt: string | null;
+  notes: string;
+  requiredChecks: {
+    fieldTypesReviewed: boolean;
+    fieldAttributesReviewed: boolean;
+    displayStyleReviewed: boolean;
+    runtimeFieldConfigReviewed: boolean;
+  };
+  fieldConfigReview?: {
+    indexFields: string[];
+    filterFields: string[];
+    suggestFields: string[];
+    imageIndexFields: string[];
+    videoIndexFields: string[];
+  };
 }
 
 interface LoadedItemSource {
@@ -200,28 +233,55 @@ interface SanitizedRecordSet {
   records: Array<Record<string, unknown>>;
 }
 
-const STRONG_PRIMARY_KEY_NAMES = [
-  'item_id',
-  'itemid',
-  'id',
-  'doc_id',
-  'docid',
-  'sku_id',
-  'skuid',
-  'product_id',
-  'productid',
-  'content_id',
-  'contentid'
-] as const;
+interface PromptInferenceMetadata {
+  fieldMeanings: Record<string, string>;
+  datasetDescription?: string;
+  filterFields?: string[];
+  suggestFields?: string[];
+  indexFields?: string[];
+  notUseFields?: string[];
+  attrFields?: Record<string, string[]>;
+}
 
-const STRONG_TITLE_NAMES = [
-  'title',
-  'name',
-  'item_name',
-  'product_name',
-  'doc_title',
-  'subject'
-] as const;
+const STRONG_PRIMARY_KEY_NAMES = {
+  item: [
+    'item_id',
+    'itemid',
+    'id',
+    'doc_id',
+    'docid',
+    'sku_id',
+    'skuid',
+    'product_id',
+    'productid',
+    'content_id',
+    'contentid'
+  ],
+  video: [
+    'content_id',
+    'video_id',
+    'vid',
+    'id'
+  ]
+} as const;
+
+const STRONG_TITLE_NAMES = {
+  item: [
+    'title',
+    'name',
+    'item_name',
+    'product_name',
+    'doc_title',
+    'subject'
+  ],
+  video: [
+    'title',
+    'video_title',
+    'name',
+    'video_name',
+    'description'
+  ]
+} as const;
 
 const STRONG_INDEX_NAMES = [
   'title',
@@ -256,19 +316,36 @@ const STRONG_IMAGE_NAMES = ['image', 'image_url', 'image_urls', 'picture', 'cove
 
 const SYNTHETIC_PRIMARY_KEY = '_viking_item_id';
 
-const DATASET_FIELD_TYPE_CODES: Record<ItemFieldType, number> = {
+const DATASET_FIELD_TYPE_CODES: Record<string, number> = {
   string: 1,
+  text: 1,
+  keyword: 1,
+  int32: 2,
+  int: 3,
   int64: 3,
   float: 4,
+  double: 4,
   boolean: 5,
+  bool: 5,
   'array<string>': 6,
+  'array<int32>': 7,
   'array<int64>': 8,
   'array<float>': 9,
+  'array<double>': 9,
   object: 10,
-  'array<object>': 11
+  json: 10,
+  'array<object>': 11,
+  'object[]': 11
 };
 
-export async function buildItemProfile(filePath: string): Promise<ItemProfileResult> {
+export interface ItemProfileCommandOptions {
+  file: string;
+  datasetType?: 'item' | 'video';
+}
+
+export async function buildItemProfile(options: ItemProfileCommandOptions): Promise<ItemProfileResult> {
+  const filePath = options.file;
+  const datasetType = options.datasetType ?? 'item';
   const source = await loadItemSource(filePath);
   if (source.records.length === 0) {
     throw new Error(`No records found in ${filePath}.`);
@@ -276,10 +353,10 @@ export async function buildItemProfile(filePath: string): Promise<ItemProfileRes
 
   const sanitized = sanitizeRecords(source.records);
   const profiled = profileSanitizedRecords(sanitized.records);
-  const inference = inferRoles(profiled, sanitized.records);
+  const inference = inferRoles(profiled, sanitized.records, datasetType);
   const normalizedRecords = applySyntheticPrimaryKeyIfNeeded(sanitized.records, inference.primaryKeyField, inference.syntheticPrimaryKey);
   const fields = attachFieldRoles(profiled, inference);
-  const validation = buildValidationResult(fields, inference, normalizedRecords, source.cleanup);
+  const validation = buildValidationResult(fields, inference, normalizedRecords, source.cleanup, datasetType);
   const warnings = collectProfileWarnings(fields, inference, sanitized.sanitizedFields, validation);
 
   return {
@@ -308,7 +385,9 @@ export async function buildItemProfile(filePath: string): Promise<ItemProfileRes
 }
 
 export async function buildItemPlan(options: ItemPlanOptions): Promise<ItemPlanResult> {
-  const profile = await buildItemProfile(options.file);
+  const datasetType = options.datasetType ?? 'item';
+  console.log('>>> buildItemPlan received datasetType:', datasetType);
+  const profile = await buildItemProfile({ file: options.file, datasetType: options.datasetType });
   const planDir =
     options.outputDir
       ? path.resolve(options.outputDir)
@@ -319,31 +398,38 @@ export async function buildItemPlan(options: ItemPlanOptions): Promise<ItemPlanR
   };
 
   const normalizedItems = profile.sample.length > 0 ? await loadNormalizedItems(options.file, profile) : [];
-  const schema = buildSchemaArtifact(profile);
-  const fieldConfig = buildFieldConfigArtifact(profile);
+  const promptInference: PromptInferenceMetadata = await inferSchemaMetadataWithPrompt({
+    fields: toPromptInferenceFields(profile.fields),
+    records: normalizedItems,
+    datasetType: datasetType === 'video' ? 'video' : 'item',
+    attrPromptKey: datasetType
+  }).catch(() => ({ fieldMeanings: {} }));
+
+  const schema = buildSchemaArtifact(profile, datasetType, promptInference.fieldMeanings, promptInference.attrFields);
+  const fieldConfig = buildFieldConfigArtifact(profile, datasetType, promptInference);
   const onlineConfig: Record<string, unknown> = {};
-  const defaults = buildDefaultTrials(profile);
+  const defaults = buildDefaultTrials(profile, datasetType);
   const validation = profile.validation;
   const searchSceneCreate = buildSearchSceneCreateArtifact(defaults);
   const searchSceneUpdate = buildSearchSceneUpdateArtifact(defaults);
   const recommendSceneCreate = buildRecommendSceneCreateArtifact(profile, defaults);
   const recommendSceneUpdate = buildRecommendSceneUpdateArtifact(defaults);
   const schemaCheck = {
-    Type: 'item',
+    Type: datasetType === 'video' ? 3 : 1,
     Schema: schema,
     DataFieldConfig: fieldConfig,
     ProjectName: options.projectName
   };
   const datasetCreate = {
     Name: names.dataset,
-    Type: 'item',
-    Description: buildDatasetDescription(options.file, options.goal),
+    Type: datasetType === 'video' ? 3 : 1,
+    Description: promptInference.datasetDescription ?? buildDatasetDescription(options.file, options.goal),
     Schema: schema,
     DataFieldConfig: fieldConfig
   };
   const appCreate = {
     Name: names.application,
-    Industry: 1
+    Industry: datasetType === 'video' ? 3 : 1
   };
 
   const plan: ItemPlanFile = {
@@ -365,6 +451,7 @@ export async function buildItemPlan(options: ItemPlanOptions): Promise<ItemPlanR
       fieldConfig: 'field-config.json',
       onlineConfig: 'online-config.json',
       validation: 'validation.json',
+      reviewConfirmation: 'review-confirmation.json',
       datasetCreate: 'dataset-create.json',
       appCreate: 'app-create.json',
       schemaCheck: 'schema-check.json',
@@ -374,8 +461,25 @@ export async function buildItemPlan(options: ItemPlanOptions): Promise<ItemPlanR
       recommendSceneUpdate: 'recommend-scene-update.json',
       report: 'report.md'
     },
-    defaults,
+    defaults: {
+      ...defaults,
+      skipApp: options.skipApp
+    },
     reviewChecklist: buildReviewChecklist(profile)
+  };
+
+  const reviewConfirmation: ItemReviewConfirmationFile = {
+    version: 1,
+    status: 'pending',
+    confirmedBy: '',
+    confirmedAt: null,
+    notes: '',
+    requiredChecks: {
+      fieldTypesReviewed: false,
+      fieldAttributesReviewed: false,
+      displayStyleReviewed: false,
+      runtimeFieldConfigReviewed: false
+    }
   };
 
   const reportPath = path.join(planDir, plan.files.report);
@@ -386,6 +490,7 @@ export async function buildItemPlan(options: ItemPlanOptions): Promise<ItemPlanR
     path.join(planDir, plan.files.fieldConfig),
     path.join(planDir, plan.files.onlineConfig),
     path.join(planDir, plan.files.validation),
+    path.join(planDir, plan.files.reviewConfirmation),
     path.join(planDir, plan.files.datasetCreate),
     path.join(planDir, plan.files.appCreate),
     path.join(planDir, plan.files.schemaCheck),
@@ -403,6 +508,7 @@ export async function buildItemPlan(options: ItemPlanOptions): Promise<ItemPlanR
   await writeJson(path.join(planDir, plan.files.fieldConfig), fieldConfig);
   await writeJson(path.join(planDir, plan.files.onlineConfig), onlineConfig);
   await writeJson(path.join(planDir, plan.files.validation), validation);
+  await writeJson(path.join(planDir, plan.files.reviewConfirmation), reviewConfirmation);
   await writeJson(path.join(planDir, plan.files.datasetCreate), datasetCreate);
   await writeJson(path.join(planDir, plan.files.appCreate), appCreate);
   await writeJson(path.join(planDir, plan.files.schemaCheck), schemaCheck);
@@ -441,7 +547,8 @@ export async function loadPlanArtifact<T>(planDir: string, relativePath: string)
 export function buildApplyDryRunSummary(
   planDir: string,
   plan: ItemPlanFile,
-  options: ItemApplyPlanOptions
+  options: ItemApplyPlanOptions,
+  reviewConfirmation?: ItemReviewConfirmationFile
 ): {
   ok: true;
   dryRun: true;
@@ -451,10 +558,23 @@ export function buildApplyDryRunSummary(
   steps: Array<{ step: string; action: string; payloadSource?: string; detail?: string }>;
   defaults: ItemPlanFile['defaults'];
   reviewChecklist: string[];
+  manualReview: {
+    file: string;
+    status: 'pending' | 'confirmed' | 'missing';
+    confirmedBy: string | null;
+    confirmedAt: string | null;
+    notes: string | null;
+    requiredChecks: Array<{ key: string; label: string; checked: boolean }>;
+    pendingChecks: string[];
+  };
   validation: ItemValidationResult;
 } {
   const recommendBootstrapReady = Array.isArray(options.recommendBhvSceneTypes) && options.recommendBhvSceneTypes.length > 0;
   const recommendEntryBindingConfirmed = options.confirmRecommendEntryBinding === true;
+  const skipApp = options.skipApp ?? plan.defaults.skipApp ?? false;
+  const requiredChecks = buildManualReviewCheckItems(reviewConfirmation);
+  const pendingChecks = requiredChecks.filter(item => !item.checked).map(item => item.label);
+  const reviewStatus = reviewConfirmation?.status ?? 'missing';
   return {
     ok: true,
     dryRun: true,
@@ -472,33 +592,33 @@ export function buildApplyDryRunSummary(
         step: 'review_confirmation',
         action: options.confirmReview
           ? 'pass'
-          : 'block apply until schema, field attributes, display style, and index choices are confirmed with the user',
+          : 'block apply until manual review is confirmed in review-confirmation.json and --confirm-review is provided',
         detail: options.confirmReview
-          ? 'Review confirmation acknowledged.'
-          : 'Pass --confirm-review after the user confirms the generated plan.'
+          ? `CLI confirmation acknowledged. Manual confirmation file: ${plan.files.reviewConfirmation}; status=${reviewStatus}; pending_checks=${pendingChecks.length > 0 ? pendingChecks.join(', ') : 'none'}`
+          : `Pass --confirm-review after a human confirms ${plan.files.reviewConfirmation}; pending_checks=${pendingChecks.length > 0 ? pendingChecks.join(', ') : 'none'}.`
       },
       { step: 'schema_check', action: 'CheckDatasetSchema', payloadSource: plan.files.schemaCheck },
       { step: 'create_dataset', action: options.datasetId ? 'skip (use existing dataset)' : 'CreateDataset', payloadSource: plan.files.datasetCreate },
       { step: 'ingest_items', action: 'runtime dataWrite', payloadSource: plan.files.normalizedItems },
-      { step: 'create_application', action: options.applicationId ? 'skip (use existing application)' : 'CreateApplication', payloadSource: plan.files.appCreate },
-      { step: 'activate_application', action: 'BindAppDataset + UpdateAppDataConfig' },
-      { step: 'wait_ready', action: options.waitReady ? 'poll app status until ready' : 'skip' },
+      { step: 'create_application', action: skipApp ? 'skip (--skip-app provided)' : options.applicationId ? 'skip (use existing application)' : 'CreateApplication', payloadSource: plan.files.appCreate },
+      { step: 'activate_application', action: skipApp ? 'skip (--skip-app provided)' : 'BindAppDataset' },
+      { step: 'wait_ready', action: skipApp ? 'skip (--skip-app provided)' : 'skip (phase one ends after activation is requested)' },
       {
         step: 'search_scene_bootstrap',
-        action: options.runTrials ? 'CreateSearchScene + update search scene + bind ChatConfig.SearchSceneID' : 'skip',
+        action: skipApp ? 'skip (--skip-app provided)' : options.runTrials ? 'CreateSearchScene + update search scene + bind ChatConfig.SearchSceneID' : 'skip',
         payloadSource: plan.files.searchSceneCreate
       },
-      { step: 'search_trial', action: options.runTrials ? `search "${options.searchQuery ?? plan.defaults.searchQuery}"` : 'skip' },
-      { step: 'chat_trial', action: options.runTrials ? `chat "${options.chatMessage ?? plan.defaults.chatMessage}"` : 'skip' },
+      { step: 'search_trial', action: skipApp ? 'skip (--skip-app provided)' : options.runTrials ? `search "${options.searchQuery ?? plan.defaults.searchQuery}"` : 'skip' },
+      { step: 'chat_trial', action: skipApp ? 'skip (--skip-app provided)' : options.runTrials ? `chat "${options.chatMessage ?? plan.defaults.chatMessage}"` : 'skip' },
       {
         step: 'recommend_bootstrap',
-        action: recommendBootstrapReady
+        action: skipApp ? 'skip (--skip-app provided)' : recommendBootstrapReady
           ? recommendEntryBindingConfirmed
             ? 'CreateRecommendScene + update recommend scene'
             : 'block recommend bootstrap until page/module binding is confirmed with the user'
           : 'skip',
         payloadSource: plan.files.recommendSceneCreate,
-        detail: recommendBootstrapReady
+        detail: skipApp ? undefined : recommendBootstrapReady
           ? recommendEntryBindingConfirmed
             ? `scene=${options.recommendSceneName ?? plan.defaults.recommend.sceneName}, bhv_scene_types=${options.recommendBhvSceneTypes?.join(',')}`
             : 'Pass --confirm-recommend-entry-binding only after the user confirms which page or module this recommend scene belongs to.'
@@ -506,14 +626,51 @@ export function buildApplyDryRunSummary(
       },
       {
         step: 'recommend_trial',
-        action: options.runTrials && recommendBootstrapReady ? 'recommend runtime smoke (if recommend user/parent context is provided)' : 'skip',
+        action: skipApp ? 'skip (--skip-app provided)' : options.runTrials && recommendBootstrapReady ? 'recommend runtime smoke (if recommend user/parent context is provided)' : 'skip',
         payloadSource: plan.files.recommendSceneUpdate
       }
     ],
     defaults: plan.defaults,
     reviewChecklist: plan.reviewChecklist,
+    manualReview: {
+      file: plan.files.reviewConfirmation,
+      status: reviewStatus,
+      confirmedBy: reviewConfirmation?.confirmedBy || null,
+      confirmedAt: reviewConfirmation?.confirmedAt ?? null,
+      notes: reviewConfirmation?.notes || null,
+      requiredChecks,
+      pendingChecks
+    },
     validation: plan.validation
   };
+}
+
+function buildManualReviewCheckItems(
+  reviewConfirmation?: ItemReviewConfirmationFile
+): Array<{ key: string; label: string; checked: boolean }> {
+  const checks = reviewConfirmation?.requiredChecks;
+  return [
+    {
+      key: 'fieldTypesReviewed',
+      label: '字段数据类型已人工确认',
+      checked: checks?.fieldTypesReviewed ?? false
+    },
+    {
+      key: 'fieldAttributesReviewed',
+      label: '字段属性已人工确认',
+      checked: checks?.fieldAttributesReviewed ?? false
+    },
+    {
+      key: 'displayStyleReviewed',
+      label: '物品展示样式已人工确认',
+      checked: checks?.displayStyleReviewed ?? false
+    },
+    {
+      key: 'runtimeFieldConfigReviewed',
+      label: '索引/过滤/补全等数据集配置已人工确认',
+      checked: checks?.runtimeFieldConfigReviewed ?? false
+    }
+  ];
 }
 
 async function loadNormalizedItems(sourcePath: string, profile: ItemProfileResult): Promise<Record<string, unknown>[]> {
@@ -687,6 +844,10 @@ function sanitizeRecords(records: Array<Record<string, unknown>>): SanitizedReco
 }
 
 function sanitizeFieldName(sourceName: string): string {
+  if (sourceName === 'content_id' || sourceName === 'content_type' || sourceName === 'video_url' || sourceName === 'parent_content_id' || sourceName === 'sequence_index') {
+    return sourceName;
+  }
+
   const trimmed = sourceName.trim();
   const normalized = trimmed
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
@@ -715,6 +876,19 @@ function profileSanitizedRecords(records: Array<Record<string, unknown>>): ItemF
       warnings.push('contains URL-like values');
     }
 
+    let subFields: ItemFieldProfile[] | undefined = undefined;
+    if (inferredType === 'object') {
+      const nestedRecords = nonNull.filter(isRecord) as Array<Record<string, unknown>>;
+      if (nestedRecords.length > 0) {
+        subFields = profileSanitizedRecords(nestedRecords);
+      }
+    } else if (inferredType === 'array<object>') {
+      const nestedRecords = nonNull.flatMap(v => (Array.isArray(v) ? v : [])).filter(isRecord) as Array<Record<string, unknown>>;
+      if (nestedRecords.length > 0) {
+        subFields = profileSanitizedRecords(nestedRecords);
+      }
+    }
+
     return {
       sourceName: name,
       name,
@@ -725,14 +899,16 @@ function profileSanitizedRecords(records: Array<Record<string, unknown>>): ItemF
       uniqueRatio: nonNull.length === 0 ? 0 : distinctValues.size / nonNull.length,
       examples: uniqueExampleValues(nonNull, 3),
       roles: [],
-      warnings
+      warnings,
+      fields: subFields
     };
   });
 }
 
 function inferRoles(
   fields: ItemFieldProfile[],
-  records: Array<Record<string, unknown>>
+  records: Array<Record<string, unknown>>,
+  datasetType: 'item' | 'video'
 ): {
   primaryKeyField: string;
   syntheticPrimaryKey: boolean;
@@ -747,8 +923,10 @@ function inferRoles(
   const scalarUniqueCandidates = fields.filter(field =>
     ['string', 'int64'].includes(field.inferredType) && field.missingCount === 0 && field.distinctCount === total
   );
+  
+  const pkNames = STRONG_PRIMARY_KEY_NAMES[datasetType] as readonly string[];
   const strongPkCandidates = fields
-    .filter(field => ['string', 'int64'].includes(field.inferredType) && STRONG_PRIMARY_KEY_NAMES.includes(field.name as never))
+    .filter(field => ['string', 'int64'].includes(field.inferredType) && pkNames.includes(field.name as never))
     .sort((left, right) => {
       if (left.missingCount !== right.missingCount) return left.missingCount - right.missingCount;
       if (left.uniqueRatio !== right.uniqueRatio) return right.uniqueRatio - left.uniqueRatio;
@@ -758,8 +936,9 @@ function inferRoles(
   const primaryKeyField = strongPk?.name ?? scalarUniqueCandidates[0]?.name ?? SYNTHETIC_PRIMARY_KEY;
   const syntheticPrimaryKey = primaryKeyField === SYNTHETIC_PRIMARY_KEY;
 
+  const titleNames = STRONG_TITLE_NAMES[datasetType] as readonly string[];
   const stringFields = fields.filter(field => field.inferredType === 'string');
-  const strongTitle = stringFields.find(field => STRONG_TITLE_NAMES.includes(field.name as never) && !looksLikeUrlField(field.name, field.examples));
+  const strongTitle = stringFields.find(field => titleNames.includes(field.name as never) && !looksLikeUrlField(field.name, field.examples));
   const titleField = strongTitle?.name ?? pickBestFallbackTitleField(stringFields);
 
   const imageFields = fields
@@ -826,10 +1005,7 @@ function inferRoles(
   };
 }
 
-function attachFieldRoles(
-  fields: ItemFieldProfile[],
-  inference: ReturnType<typeof inferRoles>
-): ItemFieldProfile[] {
+function attachFieldRoles(fields: ItemFieldProfile[], inference: ReturnType<typeof inferRoles>): ItemFieldProfile[] {
   return fields.map(field => ({
     ...field,
     roles: [
@@ -840,6 +1016,14 @@ function attachFieldRoles(
       ...(inference.suggestFields.includes(field.name) ? ['suggest'] : []),
       ...(inference.imageFields.includes(field.name) ? ['image'] : [])
     ]
+  }));
+}
+
+function toPromptInferenceFields(fields: ItemFieldProfile[]): Array<{ name: string; inferredType: string; fields?: any[] }> {
+  return fields.map(field => ({
+    name: field.name,
+    inferredType: field.inferredType,
+    ...(field.fields && field.fields.length > 0 ? { fields: toPromptInferenceFields(field.fields) } : {})
   }));
 }
 
@@ -896,7 +1080,8 @@ function buildValidationResult(
   fields: ItemFieldProfile[],
   inference: ReturnType<typeof inferRoles>,
   records: Array<Record<string, unknown>>,
-  cleanup: ItemCleanupSummary
+  cleanup: ItemCleanupSummary,
+  datasetType: 'item' | 'video'
 ): ItemValidationResult {
   const issues: ItemValidationIssue[] = [];
   const primaryKeyField = inference.primaryKeyField;
@@ -907,6 +1092,17 @@ function buildValidationResult(
   const missingTitleCount = inference.titleField ? titleValues.filter(isMissingValue).length : records.length;
   const mixedTypeFields = fields.filter(field => detectObservedKinds(records, field.name).length > 1);
   const emptyRecordCount = records.filter(isEffectivelyEmptyRecord).length;
+
+  if (datasetType === 'video') {
+    const hasVideoUrl = fields.some(f => f.name === 'video_url');
+    if (!hasVideoUrl) {
+      issues.push({
+        severity: 'error',
+        code: 'video_url_missing',
+        detail: 'video_url is required for video datasets but was not found.'
+      });
+    }
+  }
 
   if (inference.syntheticPrimaryKey) {
     issues.push({
@@ -992,45 +1188,274 @@ function buildValidationResult(
   };
 }
 
-function buildSchemaArtifact(profile: ItemProfileResult): Array<Record<string, unknown>> {
-  return profile.fields.map(field => ({
-    Name: field.name,
-    Type: field.inferredType,
-    ...(field.name === profile.inferred.primaryKeyField ? { PK: true } : {})
-  }));
+function buildSchemaArtifact(
+  profile: ItemProfileResult,
+  datasetType: 'item' | 'video',
+  meaningMap?: Record<string, string>,
+  attrFields?: Record<string, string[]>
+): Array<Record<string, unknown>> {
+  function convertFields(fields: ItemFieldProfile[], prefix = ''): Array<Record<string, unknown>> {
+    return fields.map(field => {
+      const isVideoContentId = datasetType === 'video' && field.name === 'content_id';
+      const isVideoContentType = datasetType === 'video' && field.name === 'content_type';
+      const isVideoParentContentId = datasetType === 'video' && field.name === 'parent_content_id';
+      const isVideoSequenceIndex = datasetType === 'video' && field.name === 'sequence_index';
+      const isVideoUrl = datasetType === 'video' && field.name === 'video_url';
+
+      const fieldPath = prefix ? `${prefix}.${field.name}` : field.name;
+      const base: Record<string, unknown> = {
+        Name: field.name,
+        Type: DATASET_FIELD_TYPE_CODES[field.inferredType] ?? 1
+      };
+      const inferredMeaning = meaningMap?.[fieldPath];
+      if (inferredMeaning && inferredMeaning.trim().length > 0) {
+        base.Meaning = inferredMeaning.trim();
+      }
+      if (field.roles.includes('primary_key')) base.PK = true;
+      if (field.fields && field.fields.length > 0) base.Fields = convertFields(field.fields, fieldPath);
+
+      const promptAttrs = resolveSchemaAttrOverrides(datasetType, fieldPath, attrFields, field.inferredType);
+      if (promptAttrs.BizAttr !== undefined) base.BizAttr = promptAttrs.BizAttr;
+      if (promptAttrs.Required !== undefined) base.Required = promptAttrs.Required;
+      if (promptAttrs.Type !== undefined) base.Type = promptAttrs.Type;
+
+      if (isVideoContentId) {
+        base.BizAttr = 21; // VideoContentID
+        base.Required = true;
+        base.Type = 1;      // FieldTypeString
+      }
+      if (isVideoContentType) {
+        base.BizAttr = 22; // VideoContentType
+        base.Required = true;
+        base.Type = 1;
+      }
+      if (isVideoParentContentId) {
+        base.BizAttr = 24; // VideoParentContentID
+        base.Type = 1;
+      }
+      if (isVideoSequenceIndex) {
+        base.BizAttr = 25; // VideoSequenceIndex
+        base.Type = 3; // FieldTypeInt64
+      }
+      if (isVideoUrl) {
+        base.BizAttr = 23; // VideoURL
+        base.Type = 6; // FieldTypeArrayString
+      }
+
+      return base;
+    });
+  }
+
+  const schema = convertFields(profile.fields);
+  
+  if (datasetType === 'video') {
+    if (!schema.some(f => f.Name === 'content_type')) {
+      schema.push({ Name: 'content_type', Type: 1, BizAttr: 22, Required: true });
+    }
+    if (!schema.some(f => f.Name === 'video_url')) {
+      schema.push({ Name: 'video_url', Type: 6, BizAttr: 23 });
+    }
+    if (!schema.some(f => f.Name === 'parent_content_id')) {
+      schema.push({ Name: 'parent_content_id', Type: 1, BizAttr: 24 });
+    }
+    if (!schema.some(f => f.Name === 'sequence_index')) {
+      schema.push({ Name: 'sequence_index', Type: 3, BizAttr: 25 });
+    }
+  }
+  
+  return schema;
 }
 
-function buildFieldConfigArtifact(profile: ItemProfileResult): Record<string, unknown> {
+function buildFieldConfigArtifact(
+  profile: ItemProfileResult,
+  datasetType: 'item' | 'video',
+  promptInference?: PromptInferenceMetadata
+): Record<string, unknown> {
+  const fieldDescMap = buildFieldDescMap(profile.fields, profile.inferred, promptInference?.fieldMeanings);
+  const availableFields = new Set(flattenFieldPathsFromProfile(profile.fields));
+  const titleField =
+    profile.inferred.titleField && availableFields.has(profile.inferred.titleField)
+      ? profile.inferred.titleField
+      : undefined;
+  const imageIndexFields = profile.inferred.imageFields.filter(field => availableFields.has(field));
+  const videoDefaultFieldConfig =
+    datasetType === 'video'
+      ? {
+          IndexFields: availableFields.has('video_url') ? ['video_url'] : undefined,
+          FilterFields: [
+            profile.inferred.primaryKeyField,
+            'content_type',
+            'parent_content_id',
+            'sequence_index'
+          ].filter((field): field is string => Boolean(field) && availableFields.has(field)),
+          SuggestFields: titleField ? [titleField] : undefined,
+          ImageIndexFields: imageIndexFields.length > 0 ? imageIndexFields : undefined,
+          VideoIndexFields: availableFields.has('video_url') ? ['video_url'] : undefined,
+          ...(titleField ? { TitleField: titleField } : {})
+        }
+      : {};
   return compactObject({
-    TitleField: profile.inferred.titleField ?? undefined,
-    IndexFields: profile.inferred.indexFields,
-    FilterFields: profile.inferred.filterFields.length > 0 ? profile.inferred.filterFields : undefined,
-    SuggestFields: profile.inferred.suggestFields.length > 0 ? profile.inferred.suggestFields : undefined,
-    ImageFields: profile.inferred.imageFields.length > 0 ? profile.inferred.imageFields : undefined
+    ...videoDefaultFieldConfig,
+    FieldDescMap: Object.keys(fieldDescMap).length > 0 ? fieldDescMap : undefined
   });
 }
 
-function buildDefaultTrials(profile: ItemProfileResult): ItemPlanFile['defaults'] {
+function buildFieldDescMap(
+  fields: ItemFieldProfile[],
+  inferred: ItemProfileResult['inferred'],
+  meaningMap?: Record<string, string>,
+  prefix = ''
+): Record<string, string> {
+  const descMap: Record<string, string> = {};
+  for (const field of fields) {
+    const fieldPath = prefix ? `${prefix}.${field.name}` : field.name;
+    const inferredMeaning = meaningMap?.[fieldPath];
+    const desc = inferFieldDescription(field, inferred, inferredMeaning);
+    if (desc) {
+      descMap[fieldPath] = desc;
+    }
+    if (field.fields && field.fields.length > 0) {
+      Object.assign(descMap, buildFieldDescMap(field.fields, inferred, meaningMap, fieldPath));
+    }
+  }
+  return descMap;
+}
+
+function flattenFieldPathsFromProfile(fields: ItemFieldProfile[], prefix = ''): string[] {
+  const results: string[] = [];
+  for (const field of fields) {
+    const fieldPath = prefix ? `${prefix}.${field.name}` : field.name;
+    results.push(fieldPath);
+    if (field.fields && field.fields.length > 0) {
+      results.push(...flattenFieldPathsFromProfile(field.fields, fieldPath));
+    }
+  }
+  return results;
+}
+
+function filterPromptFields(values: string[] | undefined, allowed: Set<string>, notUse: Set<string>): string[] {
+  if (!values) return [];
+  return [...new Set(values.filter(value => allowed.has(value) && !notUse.has(value)))];
+}
+
+function pickPromptTitleField(
+  datasetType: 'item' | 'video',
+  attrFields: Record<string, string[]> | undefined,
+  allowed: Set<string>
+): string | undefined {
+  const candidates =
+    datasetType === 'video'
+      ? ['VideoContentTitle', 'multi_modal_title']
+      : ['ImageTitle', 'multi_modal_title'];
+  for (const attrName of candidates) {
+    const field = attrFields?.[attrName]?.find(value => allowed.has(value));
+    if (field) return field;
+  }
+  return undefined;
+}
+
+function pickPromptImageFields(
+  datasetType: 'item' | 'video',
+  attrFields: Record<string, string[]> | undefined,
+  allowed: Set<string>
+): string[] {
+  const attrNames =
+    datasetType === 'video'
+      ? ['VideoMediaCoverURL', 'multi_modal_image_url', 'ImageURL']
+      : ['ImageURL', 'ImageBase64', 'multi_modal_image_url'];
+  return [...new Set(attrNames.flatMap(name => (attrFields?.[name] ?? []).filter(value => allowed.has(value))))];
+}
+
+function resolveSchemaAttrOverrides(
+  datasetType: 'item' | 'video',
+  fieldPath: string,
+  attrFields: Record<string, string[]> | undefined,
+  inferredType: ItemFieldType
+): { BizAttr?: number; Required?: boolean; Type?: number } {
+  const hasAttr = (attrName: string): boolean => (attrFields?.[attrName] ?? []).includes(fieldPath);
+  if (datasetType === 'video') {
+    if (hasAttr('VideoContentID') || hasAttr('multi_modal_id')) {
+      return { BizAttr: 21, Required: true, Type: 1 };
+    }
+    if (hasAttr('VideoContentType') || hasAttr('multi_modal_content_type')) {
+      return { BizAttr: 22, Required: true, Type: 1 };
+    }
+    if (hasAttr('video_url') || hasAttr('VideoURL') || hasAttr('multi_modal_video_url')) {
+      return { BizAttr: 23, Type: inferredType === 'array<string>' ? 6 : 1 };
+    }
+    if (hasAttr('VideoParentContentID') || hasAttr('multi_modal_parent_id')) {
+      return { BizAttr: 24, Type: 1 };
+    }
+    if (hasAttr('VideoSequenceIndex') || hasAttr('multi_modal_sequence_index')) {
+      return { BizAttr: 25, Type: 3 };
+    }
+  }
+  return {};
+}
+
+function inferFieldDescription(
+  field: ItemFieldProfile,
+  inferred: ItemProfileResult['inferred'],
+  inferredMeaning?: string
+): string {
+  if (inferredMeaning && inferredMeaning.trim().length > 0) {
+    return inferredMeaning.trim();
+  }
+  if (field.name === inferred.primaryKeyField) {
+    return `Primary key identifier (${field.inferredType})`;
+  }
+  if (field.name === inferred.titleField) {
+    return `Title field used for search indexing and suggestions (${field.inferredType})`;
+  }
+
+  const roles: string[] = [];
+  if (inferred.indexFields.includes(field.name)) roles.push('index');
+  if (inferred.filterFields.includes(field.name)) roles.push('filter');
+  if (inferred.suggestFields.includes(field.name)) roles.push('suggest');
+  if (inferred.imageFields.includes(field.name)) roles.push('image');
+
+  const roleSuffix = roles.length > 0 ? `, used for ${roles.join('/')}` : '';
+  const typePart = field.inferredType;
+
+  const exampleHint = field.examples.length > 0
+    ? `, e.g. ${field.examples.slice(0, 2).map(v => JSON.stringify(v)).join(', ')}`
+    : '';
+
+  const statsHint = field.distinctCount > 0
+    ? ` (${field.distinctCount} distinct values)`
+    : '';
+
+  return `${humanizeFieldName(field.name)} (${typePart}${roleSuffix}${statsHint}${exampleHint})`;
+}
+
+function humanizeFieldName(name: string): string {
+  return name
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function buildDefaultTrials(profile: ItemProfileResult, datasetType: 'item' | 'video'): ItemPlanFile['defaults'] {
   const titleField = profile.inferred.titleField;
   const sample = profile.sample[0] ?? {};
   const titleValue = titleField ? normalizeDisplayText(sample[titleField]) : '';
   const categoryField = profile.fields.find(field => field.name === 'category' || field.name.endsWith('_category'))?.name;
   const categoryValue = categoryField ? normalizeDisplayText(sample[categoryField]) : '';
-  const searchQuery = (titleValue || categoryValue || 'recommended items')?.slice(0, 24) || 'recommended items';
+  const searchQuery = (titleValue || categoryValue || (datasetType === 'video' ? 'recommended videos' : 'recommended items'))?.slice(0, 24) || (datasetType === 'video' ? 'recommended videos' : 'recommended items');
   const primaryKeySample = normalizeDisplayText(sample[profile.inferred.primaryKeyField]);
 
   return {
     searchQuery,
-    chatMessage: `Based on the item data in this application, recommend a few results related to "${searchQuery}".`,
+    chatMessage: `Based on the ${datasetType} data in this application, recommend a few results related to "${searchQuery}".`,
+    datasetType,
     search: {
       sceneName: 'default-search',
-      sceneDescription: 'Generated default search scene for item onboarding.',
+      sceneDescription: `Generated default search scene for ${datasetType} onboarding.`,
       pageSize: 10
     },
     recommend: {
       sceneType: 'for_you',
       sceneName: 'homepage',
-      sceneDescription: 'Generated default recommend scene for item onboarding.',
+      sceneDescription: `Generated default recommend scene for ${datasetType} onboarding.`,
       bhvSceneTypes: ['REPLACE_WITH_BHV_SCENE_TYPE'],
       pageSize: 10,
       userId: 'user_demo',
@@ -1041,9 +1466,11 @@ function buildDefaultTrials(profile: ItemProfileResult): ItemPlanFile['defaults'
 
 function buildReviewChecklist(profile: ItemProfileResult): string[] {
   return [
-    'Review schema.json and confirm that PK, text fields, and categorical filter fields match the business goal.',
-    'Review field-config.json and confirm field attributes, display-facing fields, and IndexFields / FilterFields / SuggestFields before activating the app.',
+    'Review schema.json and confirm field data types before any real apply.',
+    'Review field-config.json and confirm FieldDescMap plus dataset-side field attributes before any real apply.',
+    'At bind time, infer and confirm IndexFields / FilterFields / SuggestFields / ImageIndexFields before activating the app.',
     'Confirm the intended item display style and result-card expectations before the real apply.',
+    'Open review-confirmation.json and mark all required checks as confirmed after human review.',
     'Review validation.json and fix duplicate keys, mixed types, or critical missing values before running item apply.',
     'If you need recommend bootstrap, confirm the target page / module first and then replace the placeholder BhvSceneTypes in recommend-scene-create.json / recommend-scene-update.json.',
     'If the source data is not product-like item data, adjust the generated plan before running item apply.',
@@ -1102,7 +1529,7 @@ function buildDatasetDescription(sourcePath: string, goal?: string): string {
   if (goal && goal.trim().length > 0) {
     return `Generated from ${sourceName}. Goal: ${goal.trim()}`;
   }
-  return `Generated from ${sourceName} by viking item plan.`;
+  return `Generated from ${sourceName} by vs item plan.`;
 }
 
 function renderPlanReport(plan: ItemPlanFile, profile: ItemProfileResult): string {
@@ -1131,6 +1558,7 @@ function renderPlanReport(plan: ItemPlanFile, profile: ItemProfileResult): strin
     `- \`${plan.files.fieldConfig}\``,
     `- \`${plan.files.onlineConfig}\``,
     `- \`${plan.files.validation}\``,
+    `- \`${plan.files.reviewConfirmation}\``,
     `- \`${plan.files.datasetCreate}\``,
     `- \`${plan.files.appCreate}\``,
     `- \`${plan.files.schemaCheck}\``,
@@ -1141,9 +1569,12 @@ function renderPlanReport(plan: ItemPlanFile, profile: ItemProfileResult): strin
     '',
     '## Suggested Commands',
     '',
+    `1. Review and update \`${plan.files.reviewConfirmation}\` after human confirmation.`,
+    '',
     '```bash',
-    `viking item apply --plan-dir ${quoteShellPath('.')} --dry-run`,
-    `viking item apply --plan-dir ${quoteShellPath('.')} --confirm-review --wait-ready --run-trials`,
+    `vs item apply --plan-dir ${quoteShellPath('.')} --dry-run`,
+    `vs item provision --plan-dir ${quoteShellPath('.')} --confirm-review`,
+    `vs item verify --plan-dir ${quoteShellPath('.')}`,
     '```',
     '',
     '## Validation',
@@ -1170,7 +1601,7 @@ function renderPlanReport(plan: ItemPlanFile, profile: ItemProfileResult): strin
     `- Default scene name: \`${plan.defaults.recommend.sceneName}\``,
     `- BhvSceneTypes placeholder: ${formatInlineList(plan.defaults.recommend.bhvSceneTypes)}`,
     '- Confirm the target page / module before creating or updating any recommend scene.',
-    `- To bootstrap recommend later: \`viking item apply --plan-dir ${quoteShellPath('.')} --confirm-review --confirm-recommend-entry-binding --run-trials --recommend-bhv-scene-types your_scene_type\``,
+    `- To bootstrap recommend later: \`vs item apply --plan-dir ${quoteShellPath('.')} --confirm-review --confirm-recommend-entry-binding --run-trials --recommend-bhv-scene-types your_scene_type\``,
     '',
     '## Warnings',
     ''
@@ -1453,11 +1884,15 @@ export function normalizeFieldConfigForApi(value: unknown): Record<string, unkno
   const suggestFields = mergeStringLists(value.SuggestFields, value.SuggestField);
   const imageIndexFields = mergeStringLists(value.ImageIndexFields, value.ImageFields, value.ImageField);
 
+  const fieldDescMap = isRecord(value.FieldDescMap) && Object.keys(value.FieldDescMap).length > 0 ? value.FieldDescMap : undefined;
+
   return compactObject({
+    ...(titleField ? { TitleField: titleField } : {}),
     ...(indexFields ? { IndexFields: indexFields } : {}),
     ...(filterFields ? { FilterFields: filterFields } : {}),
     ...(suggestFields ? { SuggestFields: suggestFields } : {}),
-    ...(imageIndexFields ? { ImageIndexFields: imageIndexFields } : {})
+    ...(imageIndexFields ? { ImageIndexFields: imageIndexFields } : {}),
+    ...(fieldDescMap ? { FieldDescMap: fieldDescMap } : {})
   });
 }
 
@@ -1477,11 +1912,17 @@ export function normalizeSchemaForApi(value: unknown): Array<Record<string, unkn
       throw new Error('Every schema field needs Name/FieldName and Type/FieldType.');
     }
 
+    const subFields = entry.Fields ?? entry.SubFields ?? entry.fields ?? entry.subFields;
+
     return compactObject({
+      ...entry,
       Name: fieldName,
       Type: normalizeSchemaFieldType(rawType),
       PK: entry.PK === true ? true : undefined,
-      Fields: Array.isArray(entry.Fields) ? normalizeSchemaForApi(entry.Fields) : undefined
+      Fields: Array.isArray(subFields) ? normalizeSchemaForApi(subFields) : undefined,
+      SubFields: undefined,
+      fields: undefined,
+      subFields: undefined
     });
   });
 }
@@ -1492,9 +1933,12 @@ function normalizeSchemaFieldType(value: unknown): number {
   }
 
   if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    const code = DATASET_FIELD_TYPE_CODES[normalized as ItemFieldType];
+    const normalized = value.trim().toLowerCase().replace(/[\s_]+/g, '');
+    const code = DATASET_FIELD_TYPE_CODES[normalized];
     if (code) return code;
+    
+    const literalAlias = DATASET_FIELD_TYPE_CODES[value.trim().toLowerCase()];
+    if (literalAlias) return literalAlias;
   }
 
   throw new Error(`Unsupported dataset field type: ${String(value)}`);

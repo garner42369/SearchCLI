@@ -1,37 +1,50 @@
 {
   "skills": [
     {
-      "name": "viking-chat",
+      "name": "vs-app-dataset-bind",
       "files": [
-        "viking-chat/SKILL.md"
+        "vs-app-dataset-bind/SKILL.md"
       ]
     },
     {
-      "name": "viking-item-onboarding",
+      "name": "vs-chat",
       "files": [
-        "viking-item-onboarding/SKILL.md",
-        "viking-item-onboarding/references/agent-prompt-template.md",
-        "viking-item-onboarding/references/review-checklist.md",
-        "viking-item-onboarding/references/walkthrough-card-full.md",
-        "viking-item-onboarding/references/walkthrough-csv.md"
+        "vs-chat/SKILL.md"
       ]
     },
     {
-      "name": "viking-recommend",
+      "name": "vs-item-onboarding",
       "files": [
-        "viking-recommend/SKILL.md"
+        "vs-item-onboarding/SKILL.md",
+        "vs-item-onboarding/references/agent-confirmation-ux.md",
+        "vs-item-onboarding/references/agent-prompt-template.md",
+        "vs-item-onboarding/references/review-checklist.md",
+        "vs-item-onboarding/references/walkthrough-card-full.md",
+        "vs-item-onboarding/references/walkthrough-csv.md"
       ]
     },
     {
-      "name": "viking-search",
+      "name": "vs-recommend",
       "files": [
-        "viking-search/SKILL.md"
+        "vs-recommend/SKILL.md"
       ]
     },
     {
-      "name": "viking-shared",
+      "name": "vs-search",
       "files": [
-        "viking-shared/SKILL.md"
+        "vs-search/SKILL.md"
+      ]
+    },
+    {
+      "name": "vs-shared",
+      "files": [
+        "vs-shared/SKILL.md"
+      ]
+    },
+    {
+      "name": "vs-alias-mapping",
+      "files": [
+        "vs-alias-mapping/SKILL.md"
       ]
     }
   ]

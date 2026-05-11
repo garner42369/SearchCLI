@@ -5,9 +5,6 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { SearchCase } from './types';
 
-const legacyBuildTypeColumn = '\u6784\u5efa\u7c7b\u578b';
-const legacyAuthorColumn = '\u63d0\u4f9b\u4eba';
-
 export async function ensureDir(dirPath: string): Promise<void> {
   await mkdir(dirPath, { recursive: true });
 }
@@ -80,8 +77,6 @@ async function loadSearchCasesFromCsv(filePath: string): Promise<SearchCase[]> {
         notes:
           row.build_type?.trim() ||
           row.author?.trim() ||
-          row[legacyBuildTypeColumn]?.trim() ||
-          row[legacyAuthorColumn]?.trim() ||
           undefined
       };
 

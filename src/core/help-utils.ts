@@ -10,6 +10,15 @@ export function hasHelpFlag(argv: string[]): boolean {
   return argv.includes('--help') || argv.includes('-h');
 }
 
+export function isDomainHelpRequest(argv: string[]): boolean {
+  if (argv.length === 0) {
+    return true;
+  }
+
+  const first = argv[0];
+  return first === '--help' || first === '-h' || first === 'help';
+}
+
 export function renderHelpLines(lines: HelpLine[], showInternal: boolean): string[] {
   return lines.filter(line => showInternal || !line.internal).map(line => line.text);
 }

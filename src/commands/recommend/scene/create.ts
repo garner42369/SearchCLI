@@ -17,21 +17,21 @@ export default class RecommendSceneCreate extends Command {
     ...serviceFlags,
     'application-id': Flags.string({ required: true, description: 'Viking application ID.' }),
     'project-name': Flags.string({ description: 'Viking project name when the API requires project scoping.' }),
-    type: Flags.string(),
-    name: Flags.string(),
-    description: Flags.string(),
-    'item-dataset-id': Flags.string(),
-    'recommend-model': Flags.integer(),
-    'optimization-target': Flags.integer(),
+    type: Flags.string({ description: 'Scene type (e.g., for_you, related).' }),
+    name: Flags.string({ description: 'Recommend scene name.' }),
+    description: Flags.string({ description: 'Recommend scene description.' }),
+    'item-dataset-id': Flags.string({ description: 'Viking item dataset ID.' }),
+    'recommend-model': Flags.integer({ description: 'Recommend model enum value (0 for Default, 1 for LongSequence).' }),
+    'optimization-target': Flags.integer({ description: 'Recommend optimization target enum value (0 for None, 1 for Ctr).' }),
     'bhv-scene-types': Flags.string({
       description: 'Comma-separated behavior scene types. Required unless --data already includes BhvSceneTypes.'
     }),
     'confirm-entry-binding': Flags.boolean({
       description: 'Required for real writes. Confirms the user already chose the target page or module for this recommend scene.'
     }),
-    'click-event-types': Flags.string(),
-    'positive-event-types': Flags.string(),
-    'negative-event-types': Flags.string()
+    'click-event-types': Flags.string({ description: 'Comma-separated click event types.' }),
+    'positive-event-types': Flags.string({ description: 'Comma-separated positive event types.' }),
+    'negative-event-types': Flags.string({ description: 'Comma-separated negative event types.' })
   };
 
   async run(): Promise<void> {

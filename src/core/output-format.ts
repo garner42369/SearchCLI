@@ -166,6 +166,9 @@ function parseOutputFormat(value: string): OutputFormat {
 }
 
 function formatAsPretty(value: unknown): string {
+  if (isItemApplyDryRunSummary(value)) {
+    return renderItemApplyDryRunChecklist(value);
+  }
   const collection = preferCollection(value);
   if (collection !== value) {
     return formatAsTable(collection);
@@ -184,6 +187,58 @@ function formatAsPretty(value: unknown): string {
   }
 
   return stringifyScalar(value);
+}
+
+function renderItemApplyDryRunChecklist(value: ItemApplyDryRunSummaryRecord): string {
+  const lines: string[] = [];
+  lines.push('Item Apply Dry Run');
+  lines.push(`Plan Dir: ${stringifyCell(value.planDir)}`);
+  lines.push(`Dataset ID: ${stringifyCell(value.datasetId ?? '(new dataset)')}`);
+  lines.push(`Application ID: ${stringifyCell(value.applicationId ?? '(new application)')}`);
+  lines.push('');
+  lines.push('Manual Review');
+  lines.push(`- File: ${stringifyCell(value.manualReview.file)}`);
+  lines.push(`- Status: ${stringifyCell(value.manualReview.status)}`);
+  lines.push(`- Confirmed By: ${stringifyCell(value.manualReview.confirmedBy ?? '(pending)')}`);
+  lines.push(`- Confirmed At: ${stringifyCell(value.manualReview.confirmedAt ?? '(pending)')}`);
+  if (value.manualReview.notes) {
+    lines.push(`- Notes: ${stringifyCell(value.manualReview.notes)}`);
+  }
+  lines.push('- Checklist:');
+  for (const item of value.manualReview.requiredChecks) {
+    lines.push(`  ${item.checked ? '[x]' : '[ ]'} ${stringifyCell(item.label)}`);
+  }
+  lines.push(
+    `- Pending: ${
+      value.manualReview.pendingChecks.length > 0
+        ? value.manualReview.pendingChecks.map(item => stringifyCell(item)).join(', ')
+        : 'none'
+    }`
+  );
+  lines.push('');
+  lines.push('Planned Steps');
+  for (const step of value.steps) {
+    lines.push(`- ${stringifyCell(step.step)}: ${stringifyCell(step.action)}`);
+    if (step.payloadSource) {
+      lines.push(`  payload: ${stringifyCell(step.payloadSource)}`);
+    }
+    if (step.detail) {
+      lines.push(`  detail: ${stringifyCell(step.detail)}`);
+    }
+  }
+  lines.push('');
+  lines.push('Review Checklist');
+  for (const item of value.reviewChecklist) {
+    lines.push(`- ${stringifyCell(item)}`);
+  }
+  lines.push('');
+  lines.push('Validation');
+  lines.push(`- OK: ${stringifyCell(value.validation.ok)}`);
+  lines.push(
+    `- Blocking Issues: ${stringifyCell(value.validation.summary?.blockingIssueCount ?? 0)}`
+  );
+  lines.push(`- Warnings: ${stringifyCell(value.validation.summary?.warningCount ?? 0)}`);
+  return lines.join('\n');
 }
 
 function formatAsTable(value: unknown): string {
@@ -468,6 +523,39 @@ function expandArrayCursor(values: unknown[]): unknown[] {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+interface ItemApplyDryRunSummaryRecord extends Record<string, unknown> {
+  dryRun: true;
+  planDir: string;
+  datasetId: string | null;
+  applicationId: string | null;
+  steps: Array<{ step: string; action: string; payloadSource?: string; detail?: string }>;
+  reviewChecklist: string[];
+  manualReview: {
+    file: string;
+    status: string;
+    confirmedBy: string | null;
+    confirmedAt: string | null;
+    notes: string | null;
+    requiredChecks: Array<{ key: string; label: string; checked: boolean }>;
+    pendingChecks: string[];
+  };
+  validation: {
+    ok: boolean;
+    summary?: {
+      blockingIssueCount?: number;
+      warningCount?: number;
+    };
+  };
+}
+
+function isItemApplyDryRunSummary(value: unknown): value is ItemApplyDryRunSummaryRecord {
+  if (!isRecord(value)) return false;
+  if (value.dryRun !== true) return false;
+  if (!('manualReview' in value) || !('steps' in value) || !('reviewChecklist' in value)) return false;
+  if (!Array.isArray(value.steps) || !Array.isArray(value.reviewChecklist)) return false;
+  return isRecord(value.manualReview);
 }
 
 function isFlatRecord(value: unknown): value is Record<string, unknown> {

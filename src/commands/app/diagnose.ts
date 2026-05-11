@@ -13,7 +13,7 @@ export default class AppDiagnose extends Command {
   static override flags = {
     ...workflowServiceFlags,
     'application-id': Flags.string({ required: true }),
-    'project-name': Flags.string(),
+    'project-name': Flags.string({ description: 'Viking project name when the API requires project scoping.' }),
     'activated-only': Flags.boolean({
       description: 'Only inspect activated dataset configs.'
     })

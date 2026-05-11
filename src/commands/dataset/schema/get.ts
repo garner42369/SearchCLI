@@ -6,13 +6,12 @@ import { runDatasetSchemaGetCommand } from '../../../app/product-commands';
 import { serviceFlags } from '../../../command-support/service-flags';
 
 export default class DatasetSchemaGet extends Command {
-  static override description = 'Get dataset schema and field config.';
+  static override description = 'Get dataset schema.';
 
   static override flags = {
     ...serviceFlags,
     id: Flags.string({ required: true, description: 'Viking dataset ID.' }),
-    version: Flags.integer(),
-    'field-config-version': Flags.integer(),
+    version: Flags.integer({ description: 'Optional specific schema version.' }),
     'project-name': Flags.string({ description: 'Viking project name when the API requires project scoping.' })
   };
 
@@ -27,8 +26,7 @@ export default class DatasetSchemaGet extends Command {
       data: flags.data,
       projectName: flags['project-name'],
       id: flags.id,
-      version: flags.version,
-      fieldConfigVersion: flags['field-config-version']
+      version: flags.version
     });
   }
 }

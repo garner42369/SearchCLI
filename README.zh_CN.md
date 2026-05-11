@@ -38,9 +38,9 @@ SearchCLI 是 AI Search on Volcengine 的开放 CLI。
 
 ## 核心能力
 
-- 使用 `viking item profile | plan | apply` 完成结构化 item onboarding。
-- 使用 `viking app`、`viking dataset`、`viking data` 管理应用和数据集。
-- 使用 `viking search run`、`viking recommend run`、`viking chat run` 做运行时验证。
+- 使用 `vs item profile | plan | apply` 完成结构化 item onboarding。
+- 使用 `vs app`、`vs dataset`、`vs data` 管理应用和数据集。
+- 使用 `vs search run`、`vs recommend run`、`vs chat run` 做运行时验证。
 - 通过可安装的 `Viking skills` 让外部 Agent 使用同一套工作流。
 
 ## 环境要求
@@ -64,25 +64,62 @@ bash ./scripts/install.sh
 如果当前 shell 已经设置了 `VIKING_AK` 和 `VIKING_SK`：
 
 ```bash
-viking auth import-env
-viking auth status --json
-viking doctor --json
+vs auth import-env
+vs auth status --json
+vs doctor --json
 ```
 
 否则请在真实终端中执行交互式登录：
 
 ```bash
-viking auth login
+vs auth login
 ```
 
 ### 3. 跑通第一条 Onboarding 流程
 
+如果用户希望同时创建应用、完成 bind-time 字段配置确认，并做运行时验证，请走 `dataset+app` 路径：
+
 ```bash
-viking item profile --file ./items.json --pretty
-viking item plan --file ./items.json --goal "Build item search"
-viking item apply --plan-dir ./.viking/item-plans/<plan> --dry-run
-viking item apply --plan-dir ./.viking/item-plans/<plan> --confirm-review --wait-ready --run-trials
+vs item profile --file ./items.json --pretty
+vs item plan --file ./items.json --goal "Build item search"
+vs item apply --plan-dir ./.viking/item-plans/<plan> --dry-run
+vs item apply --plan-dir ./.viking/item-plans/<plan> --confirm-review --wait-ready --run-trials
 ```
+
+如果你只需要数据集创建和导入，请走 `dataset-only` 路径，在生成 plan 时加上 `--skip-app`，并在 `dataset create + ingest` 后结束：
+
+```bash
+vs item profile --file ./items.json --pretty
+vs item plan --file ./items.json --goal "Build item search" --skip-app
+vs dataset create --data @dataset-create.json
+vs dataset ingest --dataset-id <dataset-id> --fields @<normalized-items-artifact>
+```
+
+如果 plan 已经产出了 `dataset-create.json`，优先使用它创建数据集，这样可以把 `Schema` 和 `DataFieldConfig` 一起提交。`--name <dataset-name> --type item --schema @schema.json` 仍然保留为没有完整 create payload 时的手动 schema-only 兜底方式。
+
+当你已经有一个现成的 plan、但还想在执行阶段强制保持 `dataset-only` 边界时，`vs item provision` 和 `vs item apply` 也都支持 `--skip-app` 作为执行期保护开关。
+
+如果你要创建的是视频数据集，不要依赖默认类型，必须显式传入 `--type video`：
+
+对于 `dataset+app`：
+
+```bash
+vs item profile --file ./videos.jsonl --type video --pretty
+vs item plan --file ./videos.jsonl --type video --goal "Build video search"
+vs item apply --plan-dir ./.viking/item-plans/<plan> --dry-run
+vs item apply --plan-dir ./.viking/item-plans/<plan> --confirm-review --wait-ready --run-trials
+```
+
+对于 `dataset-only`：
+
+```bash
+vs item profile --file ./videos.jsonl --type video --pretty
+vs item plan --file ./videos.jsonl --type video --goal "Build video search" --skip-app
+vs dataset create --data @dataset-create.json
+vs dataset ingest --dataset-id <dataset-id> --fields @<normalized-items-artifact>
+```
+
+对于视频 `dataset-only` 流程，优先使用 `dataset-create.json` 发起创建请求，确保同时带上 `DataFieldConfig`；仅使用 `--schema @schema.json` 可能会触发 `MissingParameter.DefaultFieldStrategy`。
 
 ## 快速开始（AI Agent）
 
@@ -104,47 +141,47 @@ npx skills add "<public-repo-url>" -y -g
 
 默认公开 skill bundle 包括：
 
-- `viking-shared`
-- `viking-item-onboarding`
-- `viking-search`
-- `viking-chat`
-- `viking-recommend`
+- `vs-shared`
+- `vs-item-onboarding`
+- `vs-search`
+- `vs-chat`
+- `vs-recommend`
 
 ### 3. 鉴权
 
 如果当前 shell 已经设置了 `VIKING_AK` 和 `VIKING_SK`，优先执行：
 
 ```bash
-viking auth import-env
+vs auth import-env
 ```
 
 否则执行：
 
 ```bash
-viking auth login
+vs auth login
 ```
 
 ### 4. 验证
 
 ```bash
-viking --help
-viking auth status --json
-viking doctor --json
-viking skill list
+vs --help
+vs auth status --json
+vs doctor --json
+vs skill list
 ```
 
 ## 公开命令组
 
-- `viking auth`
-- `viking doctor`
-- `viking skill`
-- `viking item`
-- `viking app`
-- `viking dataset`
-- `viking data`
-- `viking search`
-- `viking chat`
-- `viking recommend`
+- `vs auth`
+- `vs doctor`
+- `vs skill`
+- `vs item`
+- `vs app`
+- `vs dataset`
+- `vs data`
+- `vs search`
+- `vs chat`
+- `vs recommend`
 
 ## 文档
 
@@ -157,10 +194,10 @@ viking skill list
 如果你在维护开源仓库本身，可使用本地 skill tooling：
 
 ```bash
-viking skill list
-viking skill init viking-demo-skill
-viking skill validate
-viking skill install all
+vs skill list
+vs skill init viking-demo-skill
+vs skill validate
+vs skill install all
 ```
 
 构建并运行仓库检查：

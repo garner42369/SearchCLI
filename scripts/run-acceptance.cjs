@@ -56,7 +56,7 @@ function resolveCommand(kind) {
       .readdirSync(releaseDir, { withFileTypes: true })
       .filter(entry => entry.isFile())
       .map(entry => entry.name)
-      .filter(name => /^viking-(?!agent)/.test(name) && !name.endsWith('.sha256') && name !== 'SHA256SUMS' && name !== 'manifest.json' && name !== 'install.sh')
+      .filter(name => /^vs-(?!agent)/.test(name) && !name.endsWith('.sha256') && name !== 'SHA256SUMS' && name !== 'manifest.json' && name !== 'install.sh')
       .sort();
 
     if (candidates.length === 0) {
@@ -115,21 +115,21 @@ async function testSkillList() {
   const payload = JSON.parse(stdout);
   const names = payload.skills.map(skill => skill.name).sort();
   assert.deepEqual(names, [
-    'viking-chat',
-    'viking-item-onboarding',
-    'viking-recommend',
-    'viking-search',
-    'viking-shared'
+    'vs-chat',
+    'vs-item-onboarding',
+    'vs-recommend',
+    'vs-search',
+    'vs-shared'
   ]);
   return `${command.prefix} skill list --json`;
 }
 
 async function testSkillShow() {
-  const { stdout } = await runCli(['skill', 'show', '--name', 'viking-item-onboarding', '--json']);
+  const { stdout } = await runCli(['skill', 'show', '--name', 'vs-item-onboarding', '--json']);
   const payload = JSON.parse(stdout);
-  assert.equal(payload.name, 'viking-item-onboarding');
+  assert.equal(payload.name, 'vs-item-onboarding');
   assert.match(payload.description, /item-level search onboarding/i);
-  return `${command.prefix} skill show --name viking-item-onboarding --json`;
+  return `${command.prefix} skill show --name vs-item-onboarding --json`;
 }
 
 async function testDatasetListHelp() {
@@ -226,11 +226,11 @@ async function testHighRiskGuards() {
   const recommendCreateHelp = await runCli(['recommend', 'scene', 'create', '--help']);
   assert.match(recommendCreateHelp.stdout, /--confirm-entry-binding/);
 
-  const chatSkill = await runCli(['skill', 'show', '--name', 'viking-chat', '--json']);
+  const chatSkill = await runCli(['skill', 'show', '--name', 'vs-chat', '--json']);
   const chatSkillPayload = JSON.parse(chatSkill.stdout);
   assert.match(JSON.stringify(chatSkillPayload.workflow), /not treat the output as NDJSON/i);
 
-  return `${command.prefix} item apply --help && ${command.prefix} recommend scene create --help && ${command.prefix} skill show --name viking-chat --json`;
+  return `${command.prefix} item apply --help && ${command.prefix} recommend scene create --help && ${command.prefix} skill show --name vs-chat --json`;
 }
 
 async function testAuthImportEnv() {

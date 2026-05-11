@@ -55,36 +55,36 @@ npm run validate:skills
 log "building dist"
 npm run build
 
-log "installing viking globally"
+log "installing vs globally"
 npm install --global --no-fund --no-audit .
 
 NPM_PREFIX="$(npm config get prefix)"
 NPM_BIN="${NPM_PREFIX}/bin"
 
 log "install complete"
-log "command: viking"
+log "command: vs"
 log "npm prefix: ${NPM_PREFIX}"
 
-if command -v viking >/dev/null 2>&1; then
-  log "found in PATH: $(command -v viking)"
+if command -v vs >/dev/null 2>&1; then
+  log "found in PATH: $(command -v vs)"
 else
-  log "viking is not yet on PATH. Ensure PATH includes: ${NPM_BIN}"
+  log "vs is not yet on PATH. Ensure PATH includes: ${NPM_BIN}"
 fi
 
 cat <<'EOF'
 
 Recommended next steps:
   Set VIKING_AK / VIKING_SK in the current shell, then run:
-  viking auth import-env
-  viking doctor
+  vs auth import-env
+  vs doctor
 
 To install Viking skills for an external agent:
   npx skills add "<public-repo-url>" -y -g
 
 To install skills from this repo during local development:
-  viking skill install all
+  vs skill install all
 
 Then run:
-  viking --help
+  vs --help
 
 EOF

@@ -15,11 +15,13 @@ export default class AppCreate extends Command {
 
   static override flags = {
     ...serviceFlags,
-    name: Flags.string(),
-    description: Flags.string(),
+    name: Flags.string({ description: 'Application name.' }),
+    description: Flags.string({ description: 'Application description.' }),
     industry: Flags.string({
       description: 'Application industry name or numeric code from the current control plane: none|ecommerce|material|video|news|social-platform|other or 0/1/2/3/4/5/20.'
-    })
+    }),
+    language: Flags.string({ description: 'Application language: zh|en|ja' }),
+    color: Flags.string({ description: 'Application icon color: cyan|blue|purple|pink' })
   };
 
   async run(): Promise<void> {
@@ -33,7 +35,9 @@ export default class AppCreate extends Command {
       data: flags.data,
       name: flags.name,
       description: flags.description,
-      industry: flags.industry
+      industry: flags.industry,
+      language: flags.language,
+      color: flags.color
     });
   }
 }

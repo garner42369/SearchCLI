@@ -6,13 +6,12 @@ import { runDatasetSchemaCheckCommand } from '../../../app/product-commands';
 import { serviceFlags } from '../../../command-support/service-flags';
 
 export default class DatasetSchemaCheck extends Command {
-  static override description = 'Validate dataset schema and field config.';
+  static override description = 'Validate dataset schema.';
 
   static override flags = {
     ...serviceFlags,
-    type: Flags.string(),
+    type: Flags.string({ description: 'The dataset type (e.g., 0 for Item, 1 for Document).' }),
     schema: Flags.string({ description: 'Inline JSON, @file path, or JSON file path.' }),
-    'field-config': Flags.string({ description: 'Inline JSON, @file path, or JSON file path.' }),
     'project-name': Flags.string({ description: 'Viking project name when the API requires project scoping.' })
   };
 
@@ -27,8 +26,7 @@ export default class DatasetSchemaCheck extends Command {
       data: flags.data,
       projectName: flags['project-name'],
       type: flags.type,
-      schema: flags.schema,
-      fieldConfig: flags['field-config']
+      schema: flags.schema
     });
   }
 }

@@ -16,10 +16,10 @@ export default class SearchRun extends Command {
   static override flags = {
     ...serviceFlags,
     'application-id': Flags.string({ required: true }),
-    'scene-id': Flags.string(),
-    'dataset-id': Flags.string(),
-    query: Flags.string(),
-    'page-size': Flags.integer()
+    'scene-id': Flags.string({ description: 'Optional search scene ID.' }),
+    'dataset-id': Flags.string({ description: 'Optional dataset ID.' }),
+    query: Flags.string({ description: 'Search query.' }),
+    'page-size': Flags.integer({ description: 'Number of search results per page.' })
   };
 
   async run(): Promise<void> {

@@ -42,6 +42,9 @@ const connectionFlags = {
   'base-url': Flags.string({
     description: 'API base URL. Defaults to VIKING_BASE_URL.'
   }),
+  'project-name': Flags.string({
+    description: 'Viking project name. Defaults to VIKING_PROJECT_NAME or default.'
+  }),
   ak: Flags.string({
     description: 'Viking Access Key ID. Overrides auth store and VIKING_AK.'
   }),
