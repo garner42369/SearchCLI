@@ -54,8 +54,8 @@ With SearchCLI and its installable `Viking skills`, external agents can onboard 
 ### 1. Install
 
 ```bash
-git clone <public-repo-url> viking_cli
-cd viking_cli
+git clone git@github.com:volcengine/SearchCLI.git vs
+cd vs
 bash ./scripts/install.sh
 ```
 
@@ -128,15 +128,15 @@ If an external agent needs to operate AI Search through this repository:
 ### 1. Install SearchCLI
 
 ```bash
-git clone <public-repo-url> viking_cli
-cd viking_cli
+git clone git@github.com:volcengine/SearchCLI.git vs
+cd vs
 bash ./scripts/install.sh
 ```
 
 ### 2. Install Viking skills
 
 ```bash
-npx skills add "<public-repo-url>" -y -g
+npx skills add "git@github.com:volcengine/SearchCLI.git" -y -g
 ```
 
 The default public skill bundle is:

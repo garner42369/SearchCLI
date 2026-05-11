@@ -54,8 +54,8 @@ SearchCLI 是 AI Search on Volcengine 的开放 CLI。
 ### 1. 安装
 
 ```bash
-git clone <public-repo-url> viking_cli
-cd viking_cli
+git clone git@github.com:volcengine/SearchCLI.git vs
+cd vs
 bash ./scripts/install.sh
 ```
 
@@ -128,15 +128,15 @@ vs dataset ingest --dataset-id <dataset-id> --fields @<normalized-items-artifact
 ### 1. 安装 SearchCLI
 
 ```bash
-git clone <public-repo-url> viking_cli
-cd viking_cli
+git clone git@github.com:volcengine/SearchCLI.git vs
+cd vs
 bash ./scripts/install.sh
 ```
 
 ### 2. 安装 Viking skills
 
 ```bash
-npx skills add "<public-repo-url>" -y -g
+npx skills add "git@github.com:volcengine/SearchCLI.git" -y -g
 ```
 
 默认公开 skill bundle 包括：
