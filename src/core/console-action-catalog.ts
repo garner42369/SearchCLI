@@ -18,7 +18,7 @@ const PUBLIC_CONSOLE_TOP_ACTIONS: ConsoleTopAction[] = [
     path: '/api/v1/GetAppOnlineConfig',
     version: '2025-03-01',
     description: 'Get application online config through the console API.',
-    command: 'viking app online-config get --application-id <app>',
+    command: 'vs app online-config get --application-id <app>',
     payload: { AppID: 'app_123', ProjectName: 'default' },
     category: 'application'
   },
@@ -27,7 +27,7 @@ const PUBLIC_CONSOLE_TOP_ACTIONS: ConsoleTopAction[] = [
     path: '/api/v1/UpsertAppOnlineConfig',
     version: '2025-03-01',
     description: 'Create or update application online config through the console API.',
-    command: 'viking app online-config update --application-id <app> --config @online-config.json',
+    command: 'vs app online-config update --application-id <app> --config @online-config.json',
     payload: { AppID: 'app_123', Config: { ChatConfig: { SearchSceneID: 'search_scene_default' } }, ProjectName: 'default' },
     category: 'application'
   }

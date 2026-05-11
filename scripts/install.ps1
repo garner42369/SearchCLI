@@ -42,7 +42,7 @@ try {
   Write-InstallLog "building dist"
   npm run build
 
-  Write-InstallLog "installing viking globally"
+  Write-InstallLog "installing vs globally"
   npm install --global --no-fund --no-audit .
 }
 finally {
@@ -52,27 +52,27 @@ finally {
 $npmPrefix = (npm config get prefix).Trim()
 
 Write-InstallLog "install complete"
-Write-InstallLog "command: viking"
+Write-InstallLog "command: vs"
 Write-InstallLog "npm prefix: $npmPrefix"
 
-if (Get-Command viking -ErrorAction SilentlyContinue) {
-  Write-InstallLog "found in PATH: $((Get-Command viking).Source)"
+if (Get-Command vs -ErrorAction SilentlyContinue) {
+  Write-InstallLog "found in PATH: $((Get-Command vs).Source)"
 }
 else {
-  Write-InstallLog "viking is not yet on PATH. Ensure PATH includes your npm global bin directory."
+  Write-InstallLog "vs is not yet on PATH. Ensure PATH includes your npm global bin directory."
 }
 
 Write-Host ""
 Write-Host "Recommended next steps:"
 Write-Host "  Set VIKING_AK / VIKING_SK in the current shell, then run:"
-Write-Host "  viking auth import-env"
-Write-Host "  viking doctor"
+Write-Host "  vs auth import-env"
+Write-Host "  vs doctor"
 Write-Host ""
 Write-Host "To install Viking skills for an external agent:"
 Write-Host '  npx skills add "<public-repo-url>" -y -g'
 Write-Host ""
 Write-Host "To install skills from this repo during local development:"
-Write-Host "  viking skill install all"
+Write-Host "  vs skill install all"
 Write-Host ""
 Write-Host "Then run:"
-Write-Host "  viking --help"
+Write-Host "  vs --help"

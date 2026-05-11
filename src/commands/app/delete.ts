@@ -12,7 +12,7 @@ export default class AppDelete extends Command {
 
   static override flags = {
     ...serviceFlags,
-    id: Flags.string()
+    id: Flags.string({ description: 'Viking application ID to delete.' })
   };
 
   async run(): Promise<void> {

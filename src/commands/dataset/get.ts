@@ -12,7 +12,7 @@ export default class DatasetGet extends Command {
 
   static override flags = {
     ...serviceFlags,
-    id: Flags.string(),
+    id: Flags.string({ description: 'Viking dataset ID.' }),
     full: Flags.boolean({
       description: 'Return the raw GetDataset response instead of the compact summary.'
     })

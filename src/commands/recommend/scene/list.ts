@@ -12,7 +12,7 @@ export default class RecommendSceneList extends Command {
     ...serviceFlags,
     'application-id': Flags.string({ required: true, description: 'Viking application ID.' }),
     'project-name': Flags.string({ description: 'Viking project name when the API requires project scoping.' }),
-    types: Flags.string()
+    types: Flags.string({ description: 'Comma-separated list of recommend scene types to filter.' })
   };
 
   async run(): Promise<void> {

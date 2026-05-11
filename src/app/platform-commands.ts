@@ -4,7 +4,7 @@
 import { spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { parseArgs } from 'node:util';
-import { hasHelpFlag, renderUsageBlock } from '../core/help-utils';
+import { hasHelpFlag, isDomainHelpRequest, renderUsageBlock } from '../core/help-utils';
 import { VikingOpenApiClient } from '../core/openapi-client';
 import { printOutput } from '../core/output-format';
 import { resolveServiceConfig, type ServiceConfigInput } from '../core/service-config';
@@ -69,6 +69,7 @@ export async function runAuthLoginCommand(options: AuthLoginOptions): Promise<vo
     baseUrl: options.baseUrl,
     accessKeyId: options.accessKeyId,
     secretKey: options.secretKey,
+    projectName: options.projectName,
     region: options.region,
     timeoutMs: options.timeoutMs,
     credentialStore: options.credentialStore,
@@ -82,8 +83,8 @@ export async function runAuthLoginCommand(options: AuthLoginOptions): Promise<vo
 
   if (!accessKeyId || !secretKey) {
     const guidance = interactive
-      ? 'Pass --ak/--sk, set VIKING_AK/VIKING_SK and run `viking auth import-env`, or continue with `viking auth login` in this terminal.'
-      : 'The current terminal is not interactive. Set VIKING_AK/VIKING_SK in this shell and run `viking auth import-env`, or rerun `viking auth login` in a real TTY terminal.';
+      ? 'Pass --ak/--sk, set VIKING_AK/VIKING_SK and run `vs auth import-env`, or continue with `vs auth login` in this terminal.'
+      : 'The current terminal is not interactive. Set VIKING_AK/VIKING_SK in this shell and run `vs auth import-env`, or rerun `vs auth login` in a real TTY terminal.';
     throw new Error(
       `Missing AK/SK. ${guidance}`
     );
@@ -96,6 +97,7 @@ export async function runAuthLoginCommand(options: AuthLoginOptions): Promise<vo
     accessKeyId,
     secretKey,
     baseUrl: options.baseUrl,
+    projectName: options.projectName,
     region: options.region,
     timeoutMs: options.timeoutMs,
     credentialStore: options.credentialStore
@@ -107,30 +109,31 @@ export async function runAuthLoginCommand(options: AuthLoginOptions): Promise<vo
     authSource: 'secure-store',
     accessKeyId: maskCredential(accessKeyId),
     baseUrl: persisted.baseUrl,
+    projectName: persisted.projectName,
     region: persisted.region,
     credentialStore: {
       savedBackend: persisted.savedBackend,
       ...getCredentialStoreStatus(persisted.selectedStore, selectedProfile)
     },
-    configPath: persisted.configPath,
-    migratedLegacyConfig: persisted.migratedLegacyConfig
+    configPath: persisted.configPath
   });
 }
 
 export async function runAuthImportEnvCommand(options: AuthImportEnvOptions): Promise<void> {
   if (options.accessKeyId || options.secretKey) {
-    throw new Error('`viking auth import-env` reads VIKING_AK/VIKING_SK from the current shell. Do not pass --ak/--sk.');
+    throw new Error('`vs auth import-env` reads VIKING_AK/VIKING_SK from the current shell. Do not pass --ak/--sk.');
   }
 
   const accessKeyId = process.env.VIKING_AK?.trim();
   const secretKey = process.env.VIKING_SK?.trim();
   if (!accessKeyId || !secretKey) {
-    throw new Error('Missing VIKING_AK/VIKING_SK in the current shell. Set them first, then run `viking auth import-env`.');
+    throw new Error('Missing VIKING_AK/VIKING_SK in the current shell. Set them first, then run `vs auth import-env`.');
   }
 
   const existingConfig = await loadCliConfig();
   const defaults = resolveCliDefaults({
     baseUrl: options.baseUrl,
+    projectName: options.projectName,
     region: options.region,
     timeoutMs: options.timeoutMs,
     credentialStore: options.credentialStore,
@@ -144,6 +147,7 @@ export async function runAuthImportEnvCommand(options: AuthImportEnvOptions): Pr
     accessKeyId,
     secretKey,
     baseUrl: options.baseUrl,
+    projectName: options.projectName,
     region: options.region,
     timeoutMs: options.timeoutMs,
     credentialStore: options.credentialStore
@@ -151,6 +155,7 @@ export async function runAuthImportEnvCommand(options: AuthImportEnvOptions): Pr
 
   const importedKeys = ['VIKING_AK', 'VIKING_SK'];
   if (process.env.VIKING_BASE_URL || options.baseUrl) importedKeys.push('VIKING_BASE_URL');
+  if (process.env.VIKING_PROJECT_NAME || options.projectName) importedKeys.push('VIKING_PROJECT_NAME');
   if (process.env.VIKING_REGION || options.region) importedKeys.push('VIKING_REGION');
 
   await printJson({
@@ -161,16 +166,16 @@ export async function runAuthImportEnvCommand(options: AuthImportEnvOptions): Pr
     authSource: 'secure-store',
     accessKeyId: maskCredential(accessKeyId),
     baseUrl: persisted.baseUrl,
+    projectName: persisted.projectName,
     region: persisted.region,
     credentialStore: {
       savedBackend: persisted.savedBackend,
       ...getCredentialStoreStatus(persisted.selectedStore, selectedProfile)
     },
     configPath: persisted.configPath,
-    migratedLegacyConfig: persisted.migratedLegacyConfig,
     nextSteps: [
       'Unset VIKING_AK/VIKING_SK after import if you do not want secrets to stay in the shell.',
-      'Run `viking auth status` and `viking doctor` to verify the secure-store path.'
+      'Run `vs auth status` and `vs doctor` to verify the secure-store path.'
     ]
   });
 }
@@ -181,6 +186,7 @@ export async function runAuthStatusCommand(options: AuthStatusOptions = {}): Pro
     baseUrl: options.baseUrl,
     accessKeyId: options.accessKeyId,
     secretKey: options.secretKey,
+    projectName: options.projectName,
     region: options.region,
     timeoutMs: options.timeoutMs,
     credentialStore: options.credentialStore,
@@ -201,6 +207,7 @@ export async function runAuthStatusCommand(options: AuthStatusOptions = {}): Pro
     source: defaults.authSource,
     accessKeyId: defaults.accessKeyId ? maskCredential(defaults.accessKeyId) : null,
     baseUrl: defaults.baseUrl,
+    projectName: defaults.projectName,
     region: defaults.region,
     profileConfig: getCliProfile(currentConfig, defaults.activeProfile) ?? null,
     credentialStore: {
@@ -216,15 +223,11 @@ export async function runAuthStatusCommand(options: AuthStatusOptions = {}): Pro
       hasAk: Boolean(process.env.VIKING_AK),
       hasSk: Boolean(process.env.VIKING_SK)
     },
-    legacyConfig: {
-      hasAk: Boolean(currentConfig.accessKeyId),
-      hasSk: Boolean(currentConfig.secretKey),
-      configPath: resolveCliConfigPath()
-    },
     profiles: listCliProfiles(currentConfig).map(entry => ({
       name: entry.name,
       active: entry.active,
       baseUrl: entry.config.baseUrl ?? null,
+      projectName: entry.config.projectName ?? currentConfig.projectName ?? defaults.projectName,
       region: entry.config.region ?? null,
       credentialStore: entry.config.credentialStore ?? currentConfig.credentialStore ?? 'auto'
     }))
@@ -240,26 +243,11 @@ export async function runAuthLogoutCommand(options: AuthLogoutOptions = {}): Pro
   );
   const deletion = deleteServiceCredentialsSync(credentialStore, activeProfile);
 
-  let nextConfig = currentConfig;
-  let removedLegacyConfig = false;
-  if (currentConfig.accessKeyId) {
-    nextConfig = unsetCliConfigValue(nextConfig, 'ak');
-    removedLegacyConfig = true;
-  }
-  if (currentConfig.secretKey) {
-    nextConfig = unsetCliConfigValue(nextConfig, 'sk');
-    removedLegacyConfig = true;
-  }
-  if (removedLegacyConfig) {
-    await saveCliConfig(nextConfig);
-  }
-
   await printJson({
     ok: true,
     profile: activeProfile,
     deleted: deletion.deleted,
     backends: deletion.backends,
-    removedLegacyConfig,
     envStillConfigured: Boolean(process.env.VIKING_AK || process.env.VIKING_SK)
   });
 }
@@ -336,11 +324,6 @@ export async function runDoctorCommand(): Promise<void> {
       name: 'rg',
       ok: commandExists('rg'),
       detail: commandExists('rg') ? 'found' : 'missing'
-    },
-    {
-      name: 'gopls',
-      ok: commandExists('gopls'),
-      detail: commandExists('gopls') ? 'found' : 'optional'
     }
   ];
 
@@ -370,6 +353,7 @@ export async function runDoctorCommand(): Promise<void> {
     configPath: resolveCliConfigPath(),
     resolved: {
       baseUrl: resolved.baseUrl,
+      projectName: resolved.projectName,
       region: resolved.region,
       authSource: resolved.authSource,
       credentialStore: resolved.credentialStore,
@@ -412,8 +396,8 @@ export async function runPlatformDomainFromArgv(domain: string, argv: string[]):
 
 export function printPlatformDomainsHelp(): void {
   const publicLines = [
-    'viking auth login|import-env|status|logout|list|use',
-    'viking doctor'
+    'vs auth login|import-env|status|logout|list|use',
+    'vs doctor'
   ];
   console.log(['PLATFORM COMMANDS', renderUsageBlock(publicLines)].join('\n'));
 }
@@ -422,16 +406,16 @@ function printDomainHelp(domain: string): void {
   const helpByDomain: Record<string, string> = {
     auth: renderUsageBlock(
       [
-        'viking auth login [--profile <name>] [--ak <ak>] [--sk <sk>] [--base-url <url>] [--region <region>] [--store auto|keychain|file|ephemeral] [--no-prompt] [--format <format>]',
-        'viking auth import-env [--profile <name>] [--base-url <url>] [--region <region>] [--store auto|keychain|file|ephemeral] [--format <format>]',
-        'viking auth status [--profile <name>] [--format <format>]',
-        'viking auth logout [--profile <name>] [--store auto|keychain|file|ephemeral] [--format <format>]',
-        'viking auth list [--format <format>]',
-        'viking auth use <profile> [--format <format>]'
+        'vs auth login [--profile <name>] [--ak <ak>] [--sk <sk>] [--base-url <url>] [--region <region>] [--store auto|keychain|file|ephemeral] [--no-prompt] [--format <format>]',
+        'vs auth import-env [--profile <name>] [--base-url <url>] [--region <region>] [--store auto|keychain|file|ephemeral] [--format <format>]',
+        'vs auth status [--profile <name>] [--format <format>]',
+        'vs auth logout [--profile <name>] [--store auto|keychain|file|ephemeral] [--format <format>]',
+        'vs auth list [--format <format>]',
+        'vs auth use <profile> [--format <format>]'
       ]
     ),
     doctor: `USAGE
-  viking doctor [--format <format>] [--jq <selector>] [--output <path>]`
+  vs doctor [--format <format>] [--jq <selector>] [--output <path>]`
   };
 
   console.log(helpByDomain[domain] ?? `Unknown domain: ${domain}`);
@@ -439,7 +423,7 @@ function printDomainHelp(domain: string): void {
 
 async function runAuthCli(argv: string[]): Promise<void> {
   const action = argv[0];
-  if (!action || hasHelpFlag(argv)) {
+  if (isDomainHelpRequest(argv)) {
     printDomainHelp('auth');
     return;
   }
@@ -501,6 +485,7 @@ function parseStandaloneAuthOptions(argv: string[]): AuthLoginOptions & { positi
       jq: { type: 'string', short: 'q' },
       output: { type: 'string', short: 'o' },
       'base-url': { type: 'string' },
+      'project-name': { type: 'string' },
       ak: { type: 'string' },
       sk: { type: 'string' },
       region: { type: 'string' },
@@ -515,6 +500,7 @@ function parseStandaloneAuthOptions(argv: string[]): AuthLoginOptions & { positi
     baseUrl: optionalString(values['base-url']),
     accessKeyId: optionalString(values.ak),
     secretKey: optionalString(values.sk),
+    projectName: optionalString(values['project-name']),
     region: optionalString(values.region),
     profile: optionalString(values.profile),
     credentialStore: optionalString(values.store) ? parseCredentialStoreMode(String(values.store)) : undefined,
@@ -549,6 +535,7 @@ async function persistAuthCredentials(options: {
   accessKeyId: string;
   secretKey: string;
   baseUrl?: string;
+  projectName?: string;
   region?: string;
   timeoutMs?: number;
   credentialStore?: CredentialStoreMode;
@@ -556,8 +543,8 @@ async function persistAuthCredentials(options: {
   selectedStore: CredentialStoreMode;
   savedBackend: ReturnType<typeof saveServiceCredentialsSync>;
   configPath: string;
-  migratedLegacyConfig: boolean;
   baseUrl: string;
+  projectName: string;
   region: string;
 }> {
   const selectedStore = parseCredentialStoreMode(options.credentialStore ?? options.defaults.credentialStore);
@@ -574,6 +561,7 @@ async function persistAuthCredentials(options: {
   let nextConfig = setActiveCliProfile(options.existingConfig, options.selectedProfile);
   nextConfig = upsertCliProfile(nextConfig, options.selectedProfile, {
     baseUrl: options.baseUrl ?? options.defaults.baseUrl,
+    projectName: options.projectName ?? options.defaults.projectName,
     region: options.region ?? options.defaults.region,
     credentialStore: selectedStore,
     timeoutMs: options.timeoutMs ?? options.defaults.timeoutMs
@@ -583,21 +571,13 @@ async function persistAuthCredentials(options: {
     nextConfig = setCliConfigValue(nextConfig, 'credentials-store', selectedStore);
   }
 
-  const migratedLegacyConfig = Boolean(options.existingConfig.accessKeyId || options.existingConfig.secretKey);
-  if (options.existingConfig.accessKeyId) {
-    nextConfig = unsetCliConfigValue(nextConfig, 'ak');
-  }
-  if (options.existingConfig.secretKey) {
-    nextConfig = unsetCliConfigValue(nextConfig, 'sk');
-  }
-
   const configPath = await saveCliConfig(nextConfig);
   return {
     selectedStore,
     savedBackend,
     configPath,
-    migratedLegacyConfig,
     baseUrl: options.baseUrl ?? options.defaults.baseUrl,
+    projectName: options.projectName ?? options.defaults.projectName,
     region: options.region ?? options.defaults.region
   };
 }

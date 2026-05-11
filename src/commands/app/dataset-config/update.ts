@@ -6,7 +6,14 @@ import { runAppDatasetConfigUpdateCommand } from '../../../app/product-commands'
 import { serviceFlags } from '../../../command-support/service-flags';
 
 export default class AppDatasetConfigUpdate extends Command {
-  static override description = 'Update an application dataset config.';
+  static override description =
+    'Update an application dataset config. Prefer passing an explicit reviewed field-config.json; use --dry-run to validate before persisting.';
+
+  static override examples = [
+    '<%= config.bin %> app dataset-config update --application-id 123 --dataset-id 456 --field-config @field-config.json',
+    '<%= config.bin %> app dataset-config update --application-id 123 --dataset-id 456 --field-config ./.viking/item-plans/<plan>/field-config.json --dry-run',
+    '<%= config.bin %> app dataset-config update --application-id 123 --dataset-id 456 --schema-version 2 --field-config-version 5 --field-config @field-config.json'
+  ];
 
   static override flags = {
     ...serviceFlags,

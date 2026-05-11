@@ -20,19 +20,19 @@ Use this priority order:
 1. If the current shell already has `VIKING_AK` and `VIKING_SK`, run:
 
 ```bash
-viking auth import-env
+vs auth import-env
 ```
 
 2. Otherwise, if the agent can open a real system terminal and keep the interactive prompt alive, run:
 
 ```bash
-viking auth login
+vs auth login
 ```
 
 3. Only if interactive login is not possible, ask the user to set environment variables in the current shell and then run:
 
 ```bash
-viking auth import-env
+vs auth import-env
 ```
 
 macOS / Linux:
@@ -52,19 +52,71 @@ $env:VIKING_SK="..."
 ## 3. Verify
 
 ```bash
-viking --help
-viking auth status --json
-viking doctor --json
-viking skill list
-viking skill show --name viking-item-onboarding
+vs --help
+vs auth status --json
+vs doctor --json
+vs skill list
+vs skill show --name vs-item-onboarding
 ```
 
 ## 4. Run The First Onboarding Flow
 
-To onboard structured item data:
+For structured item data, pick one provisioning boundary first:
+
+### 4.1 Dataset + App
+
+Use this path when the user wants app creation, bind-time field config review, or runtime verification:
 
 ```bash
-viking item profile --file ./items.json --pretty
-viking item plan --file ./items.json --goal "Build item search"
-viking item apply --plan-dir ./.viking/item-plans/<plan> --dry-run
+vs item profile --file ./items.json --pretty
+vs item plan --file ./items.json --goal "Build item search"
+# optional preflight preview
+vs item apply --plan-dir ./.viking/item-plans/<plan> --dry-run
+# after the user confirms schema and bind-time fields
+vs item apply --plan-dir ./.viking/item-plans/<plan> --confirm-review
 ```
+
+### 4.2 Dataset-Only
+
+Use this path when the user only wants dataset creation / import / ingestion:
+
+```bash
+vs item profile --file ./items.json --pretty
+vs item plan --file ./items.json --goal "Build item search" --skip-app
+# after Stage A confirms schema
+vs dataset create --data @dataset-create.json
+vs dataset ingest --dataset-id <dataset-id> --fields @<normalized-items-artifact>
+```
+
+Prefer `dataset-create.json` when the plan emitted it so dataset creation keeps `Schema` and `DataFieldConfig` together. The `--name <dataset-name> --type item --schema @schema.json` form remains the manual schema-only fallback when a full create payload is unavailable or unsuitable.
+
+If you already have a plan and want to enforce the dataset-only boundary at execution time, `vs item provision` and `vs item apply` also accept `--skip-app`.
+
+### 4.3 Video Dataset
+
+If the user explicitly asks for a video dataset, pass `--type video` to both `item profile` and `item plan`.
+
+For `dataset+app`:
+
+```bash
+vs item profile --file ./videos.jsonl --type video --pretty
+vs item plan --file ./videos.jsonl --type video --goal "Build video search"
+# optional preflight preview
+vs item apply --plan-dir ./.viking/item-plans/<plan> --dry-run
+# after the user confirms schema and bind-time fields
+vs item apply --plan-dir ./.viking/item-plans/<plan> --confirm-review
+```
+
+For `dataset-only`:
+
+```bash
+vs item profile --file ./videos.jsonl --type video --pretty
+vs item plan --file ./videos.jsonl --type video --goal "Build video search" --skip-app
+# after Stage A confirms schema
+vs dataset create --data @dataset-create.json
+vs dataset ingest --dataset-id <dataset-id> --fields @<normalized-items-artifact>
+```
+
+For video dataset-only provisioning, prefer `dataset-create.json` so the create request includes `DataFieldConfig`; `--schema @schema.json` alone can fail with `MissingParameter.DefaultFieldStrategy`.
+
+If the data looks like video content (for example `video_url`, `duration`, `content_type=video`, `parent_content_id`, or `sequence_index`) but the user did not explicitly say `item` or `video`, ask a clarifying question before planning or applying.

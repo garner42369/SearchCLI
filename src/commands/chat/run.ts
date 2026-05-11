@@ -17,12 +17,13 @@ export default class ChatRun extends Command {
   static override flags = {
     ...serviceFlags,
     'application-id': Flags.string({ required: true }),
-    'session-id': Flags.string(),
-    message: Flags.string(),
+    'session-id': Flags.string({ description: 'Optional chat session ID.' }),
+    message: Flags.string({ description: 'The chat message.' }),
     'opening-remarks': Flags.boolean({
-      allowNo: true
+      allowNo: true,
+      description: 'Whether to trigger opening remarks instead of normal chat.'
     }),
-    'user-id': Flags.string(),
+    'user-id': Flags.string({ description: 'Optional user ID.' }),
     'timeout-ms': Flags.integer({
       default: 60000
     })

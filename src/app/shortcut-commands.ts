@@ -10,6 +10,7 @@ import { resolveServiceConfig, type ServiceConfigInput } from '../core/service-c
 
 export interface ShortcutServiceOptions extends ServiceConfigInput {
   data?: string;
+  projectName?: string;
 }
 
 export interface SearchShortcutRunOptions extends ShortcutServiceOptions {
@@ -165,6 +166,7 @@ function toServiceConfigInput(options: ShortcutServiceOptions): ServiceConfigInp
     baseUrl: options.baseUrl,
     accessKeyId: options.accessKeyId,
     secretKey: options.secretKey,
+    projectName: options.projectName,
     region: options.region,
     timeoutMs: options.timeoutMs
   };
@@ -218,7 +220,7 @@ function buildSearchDatasetInferenceError(
     `Could not infer a unique dataset for application ${applicationId}.`,
     `Pass --dataset-id <dataset>.`,
     `Observed candidate datasets: ${candidateText}`,
-    `Inspect current state: viking app status --application-id ${applicationId}`
+    `Inspect current state: vs app status --application-id ${applicationId}`
   ].join('\n');
 }
 

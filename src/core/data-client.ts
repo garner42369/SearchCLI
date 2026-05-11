@@ -52,7 +52,7 @@ export class VikingDataClient {
   private buildHeaders(urlString: string, body: string): Record<string, string> {
     if (!this.config.accessKeyId || !this.config.secretKey) {
       throw new Error(
-        'Missing Viking auth. Run `viking auth import-env`, `viking auth login`, set VIKING_AK/VIKING_SK, or pass --ak/--sk.'
+        'Missing Viking auth. Run `vs auth import-env`, `vs auth login`, set VIKING_AK/VIKING_SK, or pass --ak/--sk.'
       );
     }
 
@@ -72,7 +72,7 @@ export class VikingDataClient {
         headers,
         body
       },
-      'aisearch'
+      this.config.service
     );
 
     signer.addAuthorization({

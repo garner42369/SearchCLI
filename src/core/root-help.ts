@@ -28,11 +28,11 @@ export function printRootHelp(): void {
   const productCommands = renderHelpLines(PRODUCT_COMMANDS, false).join('\n  ');
   const advancedCommands = renderHelpLines(ADVANCED_COMMANDS, false).join('\n  ');
   const moreHelpLines = [
-    'viking <command> --help',
-    'viking app --help',
-    'viking item --help',
-    'viking skill --help',
-    'viking auth --help'
+    'vs <command> --help',
+    'vs app --help',
+    'vs item --help',
+    'vs skill --help',
+    'vs auth --help'
   ];
 
   console.log(`SearchCLI
@@ -40,21 +40,21 @@ export function printRootHelp(): void {
 Interactive AI search CLI. Use item/app/dataset/search/chat for the primary product workflow.
 
 USAGE
-  viking <command>
+  vs <command>
 
 QUICK START
   Sign in and verify access
-    viking auth import-env
-    viking auth login
-    viking doctor
+    vs auth import-env
+    vs auth login
+    vs doctor
 
   Create or activate an app from item data
-    viking item profile --file ./items.json --pretty
-    viking item plan --file ./items.json --goal "Build item search"
-    viking item apply --plan-dir ./.viking/item-plans/<plan> --confirm-review --wait-ready --run-trials
+    vs item profile --file ./items.json --pretty
+    vs item plan --file ./items.json --goal "Build item search"
+    vs item apply --plan-dir ./.viking/item-plans/<plan> --confirm-review --wait-ready --run-trials
 
   Try one search request
-    viking search run --application-id <app> --query "wireless headphones"
+    vs search run --application-id <app> --query "wireless headphones"
     if the app has multiple datasets, add --dataset-id <dataset>
 
 CORE

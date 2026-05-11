@@ -18,13 +18,19 @@ export default class ItemProfile extends Command {
     file: Flags.string({
       required: true,
       description: 'Path to a JSON array, JSONL, or CSV file containing structured item records.'
+    }),
+    type: Flags.string({
+      description: 'Dataset type: item or video.',
+      options: ['item', 'video'],
+      default: 'item'
     })
   };
 
   async run(): Promise<void> {
     const { flags } = await this.parse(ItemProfile);
     await runItemProfileCommand({
-      file: flags.file
+      file: flags.file,
+      datasetType: flags.type as 'item' | 'video'
     });
   }
 }

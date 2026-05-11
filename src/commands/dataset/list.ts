@@ -17,7 +17,7 @@ export default class DatasetList extends Command {
   static override flags = {
     ...serviceFlags,
     type: Flags.string({
-      description: 'Filter datasets by type, for example item, query, video, behavior, doc, or document.'
+      description: 'Filter datasets by type, for example item, query, video, behavior, or document.'
     }),
     name: Flags.string({
       description: 'Filter datasets by case-insensitive name substring.'

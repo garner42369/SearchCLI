@@ -11,8 +11,9 @@ export default class SkillInstall extends Command {
 
   static override examples = [
     '<%= config.bin %> skill install all',
-    '<%= config.bin %> skill install viking-shared viking-search --dest /tmp/viking-skills',
-    '<%= config.bin %> skill install viking-chat --force --json'
+    '<%= config.bin %> skill install vs-shared vs-search --dest /tmp/viking-skills',
+    '<%= config.bin %> skill install all --target trae-cn --force',
+    '<%= config.bin %> skill install vs-chat --force --json'
   ];
 
   static override strict = false;
@@ -23,8 +24,9 @@ export default class SkillInstall extends Command {
       description: 'Skill root directory to install from. Defaults to the repository skills directory.'
     }),
     target: Flags.string({
-      options: ['global', 'codex', 'agents', 'both'],
-      description: 'Install target. Defaults to global.'
+      options: ['global', 'codex', 'agents', 'trae', 'trae-cn'],
+      description:
+        'Install target. Defaults to global, which installs only into existing detected skill directories. Use trae-cn to install only into ~/.trae-cn/skills (honors $TRAE_CN_HOME), or trae for ~/.trae/skills (honors $TRAE_HOME).'
     }),
     dest: Flags.string({
       description: 'Explicit destination directory. Overrides --target.'

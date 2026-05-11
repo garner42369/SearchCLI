@@ -18,11 +18,17 @@ export default class RecommendSceneUpdate extends Command {
     'scene-id': Flags.string({ required: true, description: 'Viking scene ID.' }),
     'project-name': Flags.string({ description: 'Viking project name when the API requires project scoping.' }),
     config: Flags.string({ description: 'Inline JSON, @file path, or JSON file path for a nested Config payload.' }),
-    type: Flags.string(),
-    name: Flags.string(),
-    description: Flags.string(),
-    'item-dataset-id': Flags.string(),
-    'bhv-scene-types': Flags.string(),
+    count: Flags.integer({ description: 'Max number of items returned in a single recommendation.' }),
+    'boost-bury-config': Flags.string({ description: 'Inline JSON, @file path, or JSON file path for BoostBuryConfig.' }),
+    'shuffle-config': Flags.string({ description: 'Inline JSON, @file path, or JSON file path for ShuffleConfig.' }),
+    'impression-config': Flags.string({ description: 'Inline JSON, @file path, or JSON file path for ImpressionConfig.' }),
+    'suggest-config': Flags.string({ description: 'Inline JSON, @file path, or JSON file path for SuggestConfig.' }),
+    'degrade-rule-id': Flags.string({ description: 'The degrade rule ID to fallback.' }),
+    type: Flags.string({ description: 'Scene type (e.g., for_you, related).' }),
+    name: Flags.string({ description: 'Recommend scene name.' }),
+    description: Flags.string({ description: 'Recommend scene description.' }),
+    'item-dataset-id': Flags.string({ description: 'Viking item dataset ID.' }),
+    'bhv-scene-types': Flags.string({ description: 'Comma-separated behavior scene types.' }),
     'confirm-entry-binding': Flags.boolean({
       description: 'Required for real writes. Confirms the user already chose the target page or module for this recommend scene.'
     })
@@ -46,6 +52,12 @@ export default class RecommendSceneUpdate extends Command {
       itemDatasetId: flags['item-dataset-id'],
       bhvSceneTypes: flags['bhv-scene-types'],
       config: flags.config,
+      count: flags.count,
+      boostBuryConfig: flags['boost-bury-config'],
+      shuffleConfig: flags['shuffle-config'],
+      impressionConfig: flags['impression-config'],
+      suggestConfig: flags['suggest-config'],
+      degradeRuleId: flags['degrade-rule-id'],
       confirmEntryBinding: flags['confirm-entry-binding']
     });
   }

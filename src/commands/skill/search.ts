@@ -16,7 +16,7 @@ export default class SkillSearch extends Command {
 
   static override flags = {
     ...outputFormatFlags,
-    query: Flags.string(),
+    query: Flags.string({ description: 'Search query string.' }),
     category: Flags.string({
       description: 'Optional category filter applied before search scoring.'
     }),

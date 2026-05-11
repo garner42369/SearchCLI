@@ -11,11 +11,12 @@ export default class AppUpdate extends Command {
   static override flags = {
     ...serviceFlags,
     id: Flags.string({ required: true, description: 'Viking application ID.' }),
-    name: Flags.string(),
+    name: Flags.string({ description: 'Application name.' }),
     industry: Flags.string({
       description: 'Application industry name or numeric code from the current control plane: none|ecommerce|material|video|news|social-platform|other or 0/1/2/3/4/5/20.'
     }),
     icon: Flags.string({ description: 'Inline JSON, @file path, or JSON file path for Icon.' }),
+    color: Flags.string({ description: 'Application icon color: cyan|blue|purple|pink' }),
     'project-name': Flags.string({ description: 'Viking project name when the API requires project scoping.' })
   };
 
@@ -32,7 +33,8 @@ export default class AppUpdate extends Command {
       id: flags.id,
       name: flags.name,
       industry: flags.industry,
-      icon: flags.icon
+      icon: flags.icon,
+      color: flags.color
     });
   }
 }

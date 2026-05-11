@@ -28,18 +28,20 @@ usage() {
   cat <<'EOF'
 USAGE
   bash ./scripts/install-skills.sh list
-  bash ./scripts/install-skills.sh all [--target auto|codex|agents|both] [--dest <dir>] [--force]
-  bash ./scripts/install-skills.sh <skill-name> [<skill-name> ...] [--target auto|codex|agents|both] [--dest <dir>] [--force]
+  bash ./scripts/install-skills.sh all [--target auto|codex|agents|both|trae|trae-cn] [--dest <dir>] [--force]
+  bash ./scripts/install-skills.sh <skill-name> [<skill-name> ...] [--target auto|codex|agents|both|trae|trae-cn] [--dest <dir>] [--force]
 
 DESCRIPTION
   Install repository skills into local agent skill directories.
 
 DEFAULT TARGETS
-  auto   install to ~/.codex/skills and/or ~/.agents/skills when those homes exist;
-         if neither exists, default to ~/.codex/skills
-  codex  install to $CODEX_HOME/skills or ~/.codex/skills
-  agents install to $AGENTS_HOME/skills or ~/.agents/skills
-  both   install to both directories
+  auto    install to ~/.codex/skills and/or ~/.agents/skills when those homes exist;
+          if neither exists, default to ~/.codex/skills
+  codex   install to $CODEX_HOME/skills or ~/.codex/skills
+  agents  install to $AGENTS_HOME/skills or ~/.agents/skills
+  both    install to both directories
+  trae    install to $TRAE_HOME/skills or ~/.trae/skills
+  trae-cn install to $TRAE_CN_HOME/skills or ~/.trae-cn/skills
 EOF
 }
 
@@ -102,8 +104,12 @@ resolve_targets() {
 
   local codex_home="${CODEX_HOME:-${HOME}/.codex}"
   local agents_home="${AGENTS_HOME:-${HOME}/.agents}"
+  local trae_home="${TRAE_HOME:-${HOME}/.trae}"
+  local trae_cn_home="${TRAE_CN_HOME:-${HOME}/.trae-cn}"
   local codex_dest="${codex_home}/skills"
   local agents_dest="${agents_home}/skills"
+  local trae_dest="${trae_home}/skills"
+  local trae_cn_dest="${trae_cn_home}/skills"
 
   case "${TARGET_MODE}" in
     auto)
@@ -128,6 +134,12 @@ resolve_targets() {
       ;;
     both)
       printf '%s\n%s\n' "${codex_dest}" "${agents_dest}"
+      ;;
+    trae)
+      printf '%s\n' "${trae_dest}"
+      ;;
+    trae-cn)
+      printf '%s\n' "${trae_cn_dest}"
       ;;
     *)
       fail "Unsupported --target: ${TARGET_MODE}"

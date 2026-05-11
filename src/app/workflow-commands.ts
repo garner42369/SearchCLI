@@ -18,9 +18,14 @@ export interface WorkflowServiceOptions extends ServiceConfigInput {
   projectName?: string;
 }
 
-export interface AppActivateWorkflowOptions extends WorkflowServiceOptions {
+export interface AppDatasetBindWorkflowOptions extends WorkflowServiceOptions {
   applicationId: string;
   datasetId: string;
+  dryRun?: boolean;
+  backtrackEnable?: boolean;
+  backtrackAll?: boolean;
+  backtrackStart?: string;
+  backtrackEnd?: string;
   fieldConfig?: string;
   schemaVersion?: number;
   fieldConfigVersion?: number;
@@ -46,15 +51,111 @@ interface WorkflowStepResult {
   response?: unknown;
 }
 
-export async function runAppActivateWorkflowCommand(options: AppActivateWorkflowOptions): Promise<void> {
+import { isUserEventDatasetType } from '../core/types';
+import { promptText, toInteger, printResult, isRecord } from './product-commands';
+
+export async function runAppDatasetBindWorkflowCommand(options: AppDatasetBindWorkflowOptions): Promise<void> {
   const config = resolveServiceConfig(toServiceConfigInput(options));
   const client = new VikingOpenApiClient(config);
   const steps: WorkflowStepResult[] = [];
 
+  let backtrackReq: Record<string, unknown> | undefined = undefined;
+
+  const datasetRes = await client.post('/api/v1/GetDataset', compactObject({
+    DatasetID: options.datasetId,
+    ProjectName: options.projectName
+  }));
+
+  const datasetResult = isRecord(datasetRes) && isRecord((datasetRes as any).Result) ? (datasetRes as any).Result : undefined;
+  const typeCode = toInteger(datasetResult?.Type);
+
+  if (isUserEventDatasetType(typeCode)) {
+    const interactive = process.stdout.isTTY && process.stdin.isTTY;
+    let enable = options.backtrackEnable;
+    let isAll = options.backtrackAll;
+    let startDate = options.backtrackStart;
+    let endDate = options.backtrackEnd;
+
+    if (enable === undefined && interactive) {
+      console.log('Notice: You are binding a user-event (behavior) dataset.');
+      const answer = await promptText('Do you want to enable historical data backtrack? (yes/no): ');
+      enable = answer.toLowerCase() === 'yes' || answer.toLowerCase() === 'y';
+    }
+
+    if (enable) {
+      if (isAll === undefined && interactive) {
+        const answer = await promptText('Do you want to backtrack all historical data? (yes/no): ');
+        isAll = answer.toLowerCase() === 'yes' || answer.toLowerCase() === 'y';
+      }
+
+      if (!isAll) {
+        if (!startDate && interactive) {
+          startDate = await promptText('Enter start date (e.g., 20230101 or 2023-01-01): ');
+        }
+        if (!endDate && interactive) {
+          endDate = await promptText('Enter end date (e.g., 20231231 or 2023-12-31): ');
+        }
+      }
+
+      backtrackReq = compactObject({
+        Enable: true,
+        IsAll: Boolean(isAll),
+        StartDate: startDate,
+        EndDate: endDate
+      });
+    } else if (enable === false) {
+      backtrackReq = { Enable: false };
+    }
+  }
+
+  const bindingConfig = await resolveBindingDataConfig(client, options, datasetResult, typeCode);
+  if (bindingConfig.summary) {
+    steps.push({
+      step: 'prepare_binding_field_config',
+      ok: true,
+      detail: bindingConfig.summary
+    });
+  }
+  if (bindingConfig.confirmed === false) {
+    steps.push({
+      step: 'bind_dataset',
+      ok: true,
+      skipped: true,
+      detail: 'Cancelled after interactive field-config review.'
+    });
+    await printWorkflowResult(
+      'app dataset bind',
+      [
+        ['application', options.applicationId],
+        ['dataset', options.datasetId],
+        ['cancelled', 'true']
+      ],
+      {
+        ok: true,
+        applicationId: options.applicationId,
+        datasetId: options.datasetId,
+        cancelled: true,
+        steps
+      },
+      {
+        ok: true,
+        applicationId: options.applicationId,
+        datasetId: options.datasetId,
+        cancelled: true
+      }
+    );
+    return;
+  }
+
   const bindPayload = compactObject({
     AppID: options.applicationId,
     DatasetIDs: [options.datasetId],
-    ProjectName: options.projectName
+    ProjectName: options.projectName,
+    BacktrackReq: backtrackReq,
+    DataConfig: bindingConfig.dataConfig,
+    SchemaVersion: options.schemaVersion,
+    FieldsConfigVersion: options.fieldConfigVersion,
+    OnlySave: options.dryRun
   });
   const bindResponse = await client.post('/api/v1/BindAppDataset', bindPayload);
   steps.push({
@@ -63,30 +164,13 @@ export async function runAppActivateWorkflowCommand(options: AppActivateWorkflow
     response: bindResponse
   });
 
-  const hasDatasetConfigUpdate =
-    options.fieldConfig !== undefined || options.schemaVersion !== undefined || options.fieldConfigVersion !== undefined;
-  if (hasDatasetConfigUpdate) {
-    const datasetConfigPayload = compactObject({
-      AppID: options.applicationId,
-      DatasetID: options.datasetId,
-      SchemaVersion: options.schemaVersion,
-      DataConfig: await loadJsonInput(options.fieldConfig),
-      FieldsConfigVersion: options.fieldConfigVersion,
-      ProjectName: options.projectName
-    });
-    const datasetConfigResponse = await client.post('/api/v1/UpdateAppDataConfig', datasetConfigPayload);
-    steps.push({
-      step: 'update_dataset_config',
-      ok: true,
-      response: datasetConfigResponse
-    });
-  } else {
-    steps.push({
-      step: 'update_dataset_config',
-      ok: true,
-      skipped: true,
-      detail: 'No dataset-config fields were provided.'
-    });
+  if (options.dryRun) {
+    if (hasExplicitOutputFormatFlag(process.argv)) {
+      await printResult(bindResponse);
+    } else {
+      console.log('Dry run successful. No resources were changed.');
+    }
+    return;
   }
 
   if (options.onlineConfig) {
@@ -144,7 +228,7 @@ export async function runAppActivateWorkflowCommand(options: AppActivateWorkflow
   };
 
   await printWorkflowResult(
-    'app activate',
+    'app dataset bind',
     [
       ['application', options.applicationId],
       ['dataset', options.datasetId],
@@ -238,7 +322,7 @@ async function waitForAppReady(
   const reason = lastSnapshot
     ? `Timed out waiting for app readiness. Last state=${lastSnapshot.appState}, phase=${lastSnapshot.phase}, runtimeSearchReady=${String(lastSnapshot.runtimeSearchReady)}`
     : 'Timed out waiting for app readiness.';
-  throw new Error(`${reason}\nInspect status: viking app status --application-id ${options.applicationId}`);
+  throw new Error(`${reason}\nInspect status: vs app status --application-id ${options.applicationId}`);
 }
 
 async function printWorkflowResult(
@@ -267,6 +351,7 @@ function toServiceConfigInput(options: WorkflowServiceOptions): ServiceConfigInp
     baseUrl: options.baseUrl,
     accessKeyId: options.accessKeyId,
     secretKey: options.secretKey,
+    projectName: options.projectName,
     region: options.region,
     timeoutMs: options.timeoutMs
   };
@@ -274,6 +359,46 @@ function toServiceConfigInput(options: WorkflowServiceOptions): ServiceConfigInp
 
 function compactObject<T extends Record<string, unknown>>(value: T): T {
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
+}
+
+async function resolveBindingDataConfig(
+  _client: VikingOpenApiClient,
+  options: AppDatasetBindWorkflowOptions,
+  _datasetResult: Record<string, unknown> | undefined,
+  typeCode: number | undefined
+): Promise<{ dataConfig: Record<string, unknown> | undefined; summary?: string; confirmed?: boolean }> {
+  const rawFieldConfig = await loadJsonInput<Record<string, unknown>>(options.fieldConfig);
+  if (!rawFieldConfig) {
+    if (!isUserEventDatasetType(typeCode)) {
+      throw new Error(
+        'app dataset bind does not infer bind-time field config. ' +
+          'Provide --field-config with explicit IndexFields, FilterFields, SuggestFields, and ImageIndexFields.'
+      );
+    }
+    return { dataConfig: undefined };
+  }
+  if (isUserEventDatasetType(typeCode)) {
+    return { dataConfig: rawFieldConfig };
+  }
+
+  assertExplicitBindFieldConfig(rawFieldConfig);
+  return { dataConfig: rawFieldConfig };
+}
+
+function assertExplicitBindFieldConfig(fieldConfig: Record<string, unknown>): void {
+  const missingGroups = [
+    ['IndexFields', fieldConfig.IndexFields],
+    ['FilterFields', fieldConfig.FilterFields],
+    ['SuggestFields', fieldConfig.SuggestFields],
+    ['ImageIndexFields', fieldConfig.ImageIndexFields]
+  ].flatMap(([key, value]) => (Array.isArray(value) ? [] : [key]));
+
+  if (missingGroups.length > 0) {
+    throw new Error(
+      `app dataset bind requires an explicit bind-time field-config. Missing ${missingGroups.join(', ')}. ` +
+        'Prepare these fields manually before running the command.'
+    );
+  }
 }
 
 function ensurePositiveInt(value: number, flagName: string): number {

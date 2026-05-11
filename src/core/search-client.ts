@@ -4,14 +4,7 @@
 import './node-bootstrap';
 import { Signer } from '@volcengine/openapi';
 import type { RuntimeConfig, SearchCase, SearchDynamic, SearchResponseShape, SearchResultItem } from './types';
-
-const searchModeToEnum: Record<string, number> = {
-  ModeUnknown: 0,
-  Balanced: 1,
-  SemanticPriority: 2,
-  KeywordPriority: 3,
-  UserDefined: 4
-};
+import { describeSearchModeOptions, normalizeSearchMode } from './search-mode';
 
 export class VikingSearchClient {
   constructor(private readonly config: RuntimeConfig) {}
@@ -70,7 +63,7 @@ export class VikingSearchClient {
   private buildHeaders(urlString: string, body: string): Record<string, string> {
     if (!this.config.accessKeyId || !this.config.secretKey) {
       throw new Error(
-        'Missing Viking auth. Run `viking auth import-env`, `viking auth login`, set VIKING_AK/VIKING_SK, or pass --ak/--sk.'
+        'Missing Viking auth. Run `vs auth import-env`, `vs auth login`, set VIKING_AK/VIKING_SK, or pass --ak/--sk.'
       );
     }
 
@@ -90,7 +83,7 @@ export class VikingSearchClient {
         headers,
         body
       },
-      'aisearch'
+      this.config.service
     );
 
     signer.addAuthorization({
@@ -104,8 +97,12 @@ export class VikingSearchClient {
 
   private toApiSearchDynamic(input: SearchDynamic): Record<string, unknown> {
     const output: Record<string, unknown> = { ...input };
-    if (typeof input.mode === 'string') {
-      output.mode = searchModeToEnum[input.mode] ?? input.mode;
+    if (input.mode !== undefined) {
+      const normalizedMode = normalizeSearchMode(input.mode);
+      if (normalizedMode === undefined) {
+        throw new Error(`Invalid search_dynamic.mode: '${String(input.mode)}'. Allowed values are: ${describeSearchModeOptions()}`);
+      }
+      output.mode = normalizedMode;
     }
     return output;
   }

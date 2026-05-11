@@ -15,6 +15,7 @@ const packageJson = JSON.parse(await readFile(path.join(root, 'package.json'), '
 const targets = process.argv.slice(2);
 const resolvedTargets = targets.length > 0 ? targets : [defaultTarget()];
 
+execFileSync('node', [path.join(root, 'scripts', 'generate-embedded-repo-skills.mjs')], { cwd: root, stdio: 'inherit' });
 execFileSync('npm', ['run', 'build'], { cwd: root, stdio: 'inherit' });
 
 await rm(releaseDir, { recursive: true, force: true });
@@ -43,7 +44,7 @@ function defaultTarget() {
 }
 
 function outputNameForTarget(target) {
-  const name = `viking-${target.replace(/^node\d+-/, '')}`;
+  const name = `vs-${target.replace(/^node\d+-/, '')}`;
   return target.includes('win') ? `${name}.exe` : name;
 }
 
@@ -77,7 +78,7 @@ async function writeManifest() {
   );
 
   const binaries = (await readdir(releaseDir))
-    .filter(name => name.startsWith('viking-') && name !== 'viking')
+    .filter(name => name.startsWith('vs-') && name !== 'vs')
     .sort()
     .map(file => ({
       file,
@@ -97,7 +98,7 @@ async function writeManifest() {
 }
 
 function inferTarget(file) {
-  const normalized = file.replace(/^viking-/, '').replace(/\.exe$/, '');
+  const normalized = file.replace(/^vs-/, '').replace(/\.exe$/, '');
   const [platform, arch] = normalized.split('-');
   return { platform, arch };
 }

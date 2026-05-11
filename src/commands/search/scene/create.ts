@@ -12,8 +12,8 @@ export default class SearchSceneCreate extends Command {
     ...serviceFlags,
     'application-id': Flags.string({ required: true, description: 'Viking application ID.' }),
     'project-name': Flags.string({ description: 'Viking project name when the API requires project scoping.' }),
-    name: Flags.string(),
-    description: Flags.string()
+    name: Flags.string({ description: 'Search scene name.' }),
+    description: Flags.string({ description: 'Search scene description.' })
   };
 
   async run(): Promise<void> {

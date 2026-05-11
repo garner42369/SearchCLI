@@ -4,7 +4,7 @@ Thanks for contributing.
 
 This repository is the public CLI and skill surface for Viking AI Search on Volcengine. Keep changes focused on the public product surface:
 
-- `viking` CLI commands for auth, onboarding, app and dataset operations, and runtime verification
+- `vs` CLI commands for auth, onboarding, app and dataset operations, and runtime verification
 - public `Viking skills`
 - documentation and examples for the public workflow
 
@@ -67,10 +67,10 @@ This repository treats skills as first-class product assets.
 Common local workflows:
 
 ```bash
-viking skill list
-viking skill init viking-demo-skill
-viking skill validate
-viking skill install all
+vs skill list
+vs skill init viking-demo-skill
+vs skill validate
+vs skill install all
 ```
 
 When editing a skill:

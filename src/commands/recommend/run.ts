@@ -17,9 +17,9 @@ export default class RecommendRun extends Command {
     ...serviceFlags,
     'application-id': Flags.string({ required: true }),
     'scene-id': Flags.string({ required: true }),
-    'user-id': Flags.string(),
-    'parent-id': Flags.string(),
-    'page-size': Flags.integer()
+    'user-id': Flags.string({ description: 'Optional recommend user ID.' }),
+    'parent-id': Flags.string({ description: 'Optional recommend parent item ID.' }),
+    'page-size': Flags.integer({ description: 'Number of items to recommend per page.' })
   };
 
   async run(): Promise<void> {

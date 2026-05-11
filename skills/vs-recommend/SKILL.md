@@ -1,5 +1,5 @@
 ---
-name: viking-recommend
+name: vs-recommend
 description: "Recommend runtime and scene management: run recommendation requests, manage recommend scenes, and verify the basic recommendation path."
 category: recommend
 applies_to: codex, agents, external-agent
@@ -35,6 +35,14 @@ Use this skill for recommendation runtime checks, recommend scene management, an
 5. Read recommendation items from the raw response structure, especially `result.rec_results`
 6. If the result looks wrong, inspect the scene with `recommend scene list/get`
 7. Update the scene configuration when needed, then rerun the request
+
+## Customer Environment Principle
+
+- In customer environments, assume repository source code is unavailable.
+- Execute tasks using only the installed skills, the packaged `vs` CLI surface (`--help`, command output, and observed runtime behavior), and explicit user-provided information.
+- Do not rely on reading local repository source files, generated repo snapshots, or implementation details to decide runtime actions.
+- If the installed CLI behavior conflicts with a skill, trust the installed CLI behavior first.
+- If the skills and the packaged CLI still do not provide enough information to proceed safely, stop and ask the user instead of searching source code.
 
 ## Constraints
 

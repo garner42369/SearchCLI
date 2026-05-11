@@ -6,16 +6,22 @@ import { runItemApplyCommand } from '../../app/item-commands';
 import { workflowServiceFlags } from '../../command-support/service-flags';
 
 export default class ItemApply extends Command {
-  static override description = 'Apply a generated item-onboarding plan: schema check, create resources, ingest data, activate, and optionally run smoke checks.';
+  static override description =
+    'Compatibility wrapper around item provision / verify. Defaults to phase=provision unless --run-trials or --phase all is passed. Use --confirm-review for a real apply after schema and bind-time field review; use --skip-app to preserve the dataset-only boundary.';
 
   static override examples = [
-    '<%= config.bin %> item apply --plan-dir ./.viking/item-plans/demo --dry-run',
-    '<%= config.bin %> item apply --plan-dir ./.viking/item-plans/demo --confirm-review --wait-ready --run-trials',
-    '<%= config.bin %> item apply --plan-dir ./.viking/item-plans/demo --confirm-review --confirm-recommend-entry-binding --run-trials --recommend-bhv-scene-types user_behavior_scene'
+    '<%= config.bin %> item apply --plan-dir ./.viking/item-plans/demo --confirm-review',
+    '<%= config.bin %> item apply --plan-dir ./.viking/item-plans/demo --phase verify',
+    '<%= config.bin %> item apply --plan-dir ./.viking/item-plans/demo --phase all --confirm-review',
+    '<%= config.bin %> item apply --plan-dir ./.viking/item-plans/demo --confirm-review --skip-app'
   ];
 
   static override flags = {
     ...workflowServiceFlags,
+    phase: Flags.string({
+      description: 'Execution phase: provision, verify, or all. Defaults to provision unless --run-trials is passed.',
+      options: ['provision', 'verify', 'all']
+    }),
     'plan-dir': Flags.string({
       required: true,
       description: 'Directory containing plan.json and generated item-onboarding artifacts.'
@@ -32,11 +38,14 @@ export default class ItemApply extends Command {
     'application-name': Flags.string({
       description: 'Override the application name stored in the plan.'
     }),
+    'skip-app': Flags.boolean({
+      description: 'Skip application creation and subsequent app-level setup.'
+    }),
     'dataset-name': Flags.string({
       description: 'Override the dataset name stored in the plan.'
     }),
     'wait-ready': Flags.boolean({
-      description: 'Poll app status until runtime search is ready.'
+      description: 'Deprecated for phase=provision. Accepted for compatibility but ignored in stage one.'
     }),
     'wait-timeout-ms': Flags.integer({
       description: 'Maximum time to wait for readiness.'
@@ -45,7 +54,7 @@ export default class ItemApply extends Command {
       description: 'Polling interval for app readiness.'
     }),
     'run-trials': Flags.boolean({
-      description: 'After activation, run search/chat smoke using plan defaults or explicit overrides.'
+      description: 'Legacy compatibility flag. Equivalent to --phase all.'
     }),
     'search-query': Flags.string({
       description: 'Override the generated default search smoke query.'
@@ -54,7 +63,16 @@ export default class ItemApply extends Command {
       description: 'Override the generated default chat smoke message.'
     }),
     'confirm-review': Flags.boolean({
-      description: 'Required for real apply. Confirms the user has reviewed schema, field attributes, display style, and index choices.'
+      description: 'Required for real apply. Confirms the user has reviewed schema, field attributes, display style, and the binding field config used for searchable fields.'
+    }),
+    'interactive-review': Flags.boolean({
+      description: 'Render the current review summary, write review-confirmation.json, and continue apply.'
+    }),
+    reviewer: Flags.string({
+      description: 'Reviewer name to prefill for interactive review.'
+    }),
+    'review-notes': Flags.string({
+      description: 'Optional notes to prefill for interactive review.'
     }),
     'confirm-recommend-entry-binding': Flags.boolean({
       description: 'Required before recommend bootstrap. Confirms the user has chosen the target page or module for the recommend scene.'
@@ -95,14 +113,19 @@ export default class ItemApply extends Command {
       applicationId: flags['application-id'],
       datasetId: flags['dataset-id'],
       applicationName: flags['application-name'],
+      skipApp: flags['skip-app'],
       datasetName: flags['dataset-name'],
       waitReady: flags['wait-ready'],
       waitTimeoutMs: flags['wait-timeout-ms'],
       pollIntervalMs: flags['poll-interval-ms'],
       runTrials: flags['run-trials'],
+      phase: flags.phase as 'provision' | 'verify' | 'all' | undefined,
       searchQuery: flags['search-query'],
       chatMessage: flags['chat-message'],
       confirmReview: flags['confirm-review'],
+      interactiveReview: flags['interactive-review'],
+      reviewer: flags.reviewer,
+      reviewNotes: flags['review-notes'],
       confirmRecommendEntryBinding: flags['confirm-recommend-entry-binding'],
       force: flags.force,
       recommendSceneType: flags['recommend-scene-type'],

@@ -38,9 +38,9 @@ With SearchCLI and its installable `Viking skills`, external agents can onboard 
 
 ## Core Capabilities
 
-- `viking item profile | plan | apply` for structured item onboarding.
-- `viking app`, `viking dataset`, and `viking data` for application and dataset management.
-- `viking search run`, `viking recommend run`, and `viking chat run` for runtime verification.
+- `vs item profile | plan | apply` for structured item onboarding.
+- `vs app`, `vs dataset`, and `vs data` for application and dataset management.
+- `vs search run`, `vs recommend run`, and `vs chat run` for runtime verification.
 - Installable `Viking skills` so external agents can use the same workflows.
 
 ## Requirements
@@ -64,25 +64,62 @@ bash ./scripts/install.sh
 If the current shell already has `VIKING_AK` and `VIKING_SK`:
 
 ```bash
-viking auth import-env
-viking auth status --json
-viking doctor --json
+vs auth import-env
+vs auth status --json
+vs doctor --json
 ```
 
 Otherwise, run interactive login in a real terminal:
 
 ```bash
-viking auth login
+vs auth login
 ```
 
 ### 3. Run the First Onboarding Flow
 
+If the user wants a new app plus bind-time config review and runtime verification, use the `dataset+app` path:
+
 ```bash
-viking item profile --file ./items.json --pretty
-viking item plan --file ./items.json --goal "Build item search"
-viking item apply --plan-dir ./.viking/item-plans/<plan> --dry-run
-viking item apply --plan-dir ./.viking/item-plans/<plan> --confirm-review --wait-ready --run-trials
+vs item profile --file ./items.json --pretty
+vs item plan --file ./items.json --goal "Build item search"
+vs item apply --plan-dir ./.viking/item-plans/<plan> --dry-run
+vs item apply --plan-dir ./.viking/item-plans/<plan> --confirm-review --wait-ready --run-trials
 ```
+
+If you only need dataset provisioning, use the `dataset-only` path, generate a dataset-only plan with `--skip-app`, and stop after dataset create + ingest:
+
+```bash
+vs item profile --file ./items.json --pretty
+vs item plan --file ./items.json --goal "Build item search" --skip-app
+vs dataset create --data @dataset-create.json
+vs dataset ingest --dataset-id <dataset-id> --fields @<normalized-items-artifact>
+```
+
+Prefer `dataset-create.json` when the plan emitted it so dataset creation keeps `Schema` and `DataFieldConfig` together. The `--name <dataset-name> --type item --schema @schema.json` form remains the manual schema-only fallback when a full create payload is unavailable or unsuitable.
+
+`--skip-app` is also accepted by `vs item provision` and `vs item apply` as an execution-time guard rail when you need to enforce the dataset-only boundary from an existing plan.
+
+If you need a video dataset, do not rely on the default type. Always pass `--type video` explicitly:
+
+For `dataset+app`:
+
+```bash
+vs item profile --file ./videos.jsonl --type video --pretty
+vs item plan --file ./videos.jsonl --type video --goal "Build video search"
+vs item apply --plan-dir ./.viking/item-plans/<plan> --dry-run
+vs item apply --plan-dir ./.viking/item-plans/<plan> --confirm-review --wait-ready --run-trials
+```
+
+For `dataset-only`:
+
+```bash
+vs item profile --file ./videos.jsonl --type video --pretty
+vs item plan --file ./videos.jsonl --type video --goal "Build video search" --skip-app
+vs dataset create --data @dataset-create.json
+vs dataset ingest --dataset-id <dataset-id> --fields @<normalized-items-artifact>
+```
+
+For video dataset-only provisioning, prefer `dataset-create.json` so the create request includes `DataFieldConfig`; `--schema @schema.json` alone can fail with `MissingParameter.DefaultFieldStrategy`.
 
 ## Quick Start (AI Agents)
 
@@ -104,47 +141,47 @@ npx skills add "<public-repo-url>" -y -g
 
 The default public skill bundle is:
 
-- `viking-shared`
-- `viking-item-onboarding`
-- `viking-search`
-- `viking-chat`
-- `viking-recommend`
+- `vs-shared`
+- `vs-item-onboarding`
+- `vs-search`
+- `vs-chat`
+- `vs-recommend`
 
 ### 3. Authenticate
 
 If the current shell already has `VIKING_AK` and `VIKING_SK`, prefer:
 
 ```bash
-viking auth import-env
+vs auth import-env
 ```
 
 Otherwise:
 
 ```bash
-viking auth login
+vs auth login
 ```
 
 ### 4. Verify
 
 ```bash
-viking --help
-viking auth status --json
-viking doctor --json
-viking skill list
+vs --help
+vs auth status --json
+vs doctor --json
+vs skill list
 ```
 
 ## Public Command Groups
 
-- `viking auth`
-- `viking doctor`
-- `viking skill`
-- `viking item`
-- `viking app`
-- `viking dataset`
-- `viking data`
-- `viking search`
-- `viking chat`
-- `viking recommend`
+- `vs auth`
+- `vs doctor`
+- `vs skill`
+- `vs item`
+- `vs app`
+- `vs dataset`
+- `vs data`
+- `vs search`
+- `vs chat`
+- `vs recommend`
 
 ## Documentation
 
@@ -157,10 +194,10 @@ viking skill list
 If you are maintaining the open-source repository itself, the local skill tooling is:
 
 ```bash
-viking skill list
-viking skill init viking-demo-skill
-viking skill validate
-viking skill install all
+vs skill list
+vs skill init viking-demo-skill
+vs skill validate
+vs skill install all
 ```
 
 Build and run repository checks:

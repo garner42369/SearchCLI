@@ -1,5 +1,5 @@
 ---
-name: viking-shared
+name: vs-shared
 description: "Shared SearchCLI setup: install, authenticate, run doctor, and verify the local environment."
 category: shared
 applies_to: codex, agents, external-agent
@@ -32,6 +32,13 @@ Use this skill when an external agent is setting up SearchCLI for the first time
 - `app status` / `app diagnose`: inspect app readiness before blaming runtime behavior
 - `search run` / `chat run`: run a minimal verification request
 
+## Regions
+
+Built-in region checklist (for `--region` and auth profiles):
+
+- Beijing: `cn-beijing`
+- Johor: `ap-southeast-1`
+
 ## Workflow
 
 1. Confirm that the CLI is installed, then run `auth status`
@@ -42,6 +49,14 @@ Use this skill when an external agent is setting up SearchCLI for the first time
 6. External agents should install Viking skills with `npx skills add "<repo-url>" -y -g`
 7. Repository maintainers can use `skill install all` or install named skills from the local checkout
 8. Before deeper debugging, use `app status` or `search/chat run` for a minimal runtime check
+
+## Customer Environment Principle
+
+- In customer environments, assume repository source code is unavailable.
+- Execute tasks using only the installed skills, the packaged `vs` CLI surface (`--help`, command output, and observed runtime behavior), and explicit user-provided information.
+- Do not rely on reading local repository source files, generated repo snapshots, or implementation details to decide runtime actions.
+- If the installed CLI behavior conflicts with a skill, trust the installed CLI behavior first.
+- If the skills and the packaged CLI still do not provide enough information to proceed safely, stop and ask the user instead of searching source code.
 
 ## Constraints
 

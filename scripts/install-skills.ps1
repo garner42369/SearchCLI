@@ -27,8 +27,12 @@ function Get-DefaultTargets {
 
   $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }
   $agentsHome = if ($env:AGENTS_HOME) { $env:AGENTS_HOME } else { Join-Path $HOME ".agents" }
+  $traeHome = if ($env:TRAE_HOME) { $env:TRAE_HOME } else { Join-Path $HOME ".trae" }
+  $traeCnHome = if ($env:TRAE_CN_HOME) { $env:TRAE_CN_HOME } else { Join-Path $HOME ".trae-cn" }
   $codexDest = Join-Path $codexHome "skills"
   $agentsDest = Join-Path $agentsHome "skills"
+  $traeDest = Join-Path $traeHome "skills"
+  $traeCnDest = Join-Path $traeCnHome "skills"
 
   switch ($Mode) {
     "auto" {
@@ -41,6 +45,8 @@ function Get-DefaultTargets {
     "codex" { return @($codexDest) }
     "agents" { return @($agentsDest) }
     "both" { return @($codexDest, $agentsDest) }
+    "trae" { return @($traeDest) }
+    "trae-cn" { return @($traeCnDest) }
     default { Fail "unsupported --target: $Mode" }
   }
 }
@@ -78,8 +84,8 @@ for ($i = 0; $i -lt $args.Length; $i++) {
     "--help" {
       Write-Host "USAGE"
       Write-Host "  powershell -ExecutionPolicy Bypass -File .\scripts\install-skills.ps1 list"
-      Write-Host "  powershell -ExecutionPolicy Bypass -File .\scripts\install-skills.ps1 all [--target auto|codex|agents|both] [--dest <dir>] [--force]"
-      Write-Host "  powershell -ExecutionPolicy Bypass -File .\scripts\install-skills.ps1 <skill-name> [<skill-name> ...] [--target auto|codex|agents|both] [--dest <dir>] [--force]"
+      Write-Host "  powershell -ExecutionPolicy Bypass -File .\scripts\install-skills.ps1 all [--target auto|codex|agents|both|trae|trae-cn] [--dest <dir>] [--force]"
+      Write-Host "  powershell -ExecutionPolicy Bypass -File .\scripts\install-skills.ps1 <skill-name> [<skill-name> ...] [--target auto|codex|agents|both|trae|trae-cn] [--dest <dir>] [--force]"
       exit 0
     }
     default { $requested.Add($args[$i]) }
