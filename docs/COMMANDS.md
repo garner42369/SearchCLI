@@ -148,6 +148,21 @@ SearchCLI is an interactive AI search command-line tool. Below is the list of cu
     *   Description: delete a search scene from an application; inspect the scene first with `scene get` or `scene list` when the target `scene-id` is not fully confirmed
     *   Key flags: `--application-id`, `--scene-id`, `--data`
     *   Examples: `vs search scene delete --application-id 123 --scene-id abc`; `vs search scene delete --application-id 123 --scene-id abc --format json`; `vs search scene delete --application-id 123 --scene-id abc --data @payload.json`
+*   `vs search tune llm-check`
+    *   Usage: `vs search tune llm-check [--live] [service flags]`
+    *   Description: check whether CLI-managed LLM configuration is available for automated search tuning
+*   `vs search tune plan --application-id <id>`
+    *   Usage: `vs search tune plan --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--queries <file>] [--profile similarity-only] [--query-count <n>] [--top-k <n>] [--max-strategies <n>] [service flags]`
+    *   Description: plan first-version text-query similarity evaluation without calling search or LLM services; prints query source, request/label estimate, fixed `mode=UserDefined`, tuned parameter list, and strategy coverage
+*   `vs search tune query-generate --application-id <id>`
+    *   Usage: `vs search tune query-generate --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--query-count <n>] [--output-dir <dir>] [service flags]`
+    *   Description: generate a reusable synthetic JSONL query set from dataset samples with the configured CLI LLM
+*   `vs search tune run --application-id <id>`
+    *   Usage: `vs search tune run --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--queries <file>] [--profile similarity-only] [--query-count <n>] [--top-k <n>] [--max-strategies <n>] [--output-dir <dir>] [service flags]`
+    *   Description: run first-version text-query similarity evaluation and tuning with LLM query generation and pointwise relevance judging
+*   `vs search tune report --run-id <id>`
+    *   Usage: `vs search tune report --run-id <id> [--output-dir <dir>] [service flags]`
+    *   Description: read a previous search tuning report
 
 ### `chat` - Conversational Search
 *   `vs chat run --application-id <id>`

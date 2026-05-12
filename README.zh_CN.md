@@ -41,6 +41,7 @@ SearchCLI 是 AI Search on Volcengine 的开放 CLI。
 - 使用 `vs item profile | plan | apply` 完成结构化 item onboarding。
 - 使用 `vs app`、`vs dataset`、`vs data` 管理应用和数据集。
 - 使用 `vs search run`、`vs recommend run`、`vs chat run` 做运行时验证。
+- 使用 `vs search tune query-generate | plan | run | report` 做第一版文本相似度自动测评与调优。
 - 通过可安装的 `Viking skills` 让外部 Agent 使用同一套工作流。
 
 ## 环境要求
@@ -144,6 +145,7 @@ npx skills add "git@github.com:volcengine/SearchCLI.git" -y -g
 - `vs-shared`
 - `vs-item-onboarding`
 - `vs-search`
+- `vs-search-tuning`
 - `vs-chat`
 - `vs-recommend`
 

@@ -57,6 +57,7 @@ vs auth status --json
 vs doctor --json
 vs skill list
 vs skill show --name vs-item-onboarding
+vs skill show --name vs-search-tuning
 ```
 
 ## 4. Run The First Onboarding Flow
@@ -120,3 +121,17 @@ vs dataset ingest --dataset-id <dataset-id> --fields @<normalized-items-artifact
 For video dataset-only provisioning, prefer `dataset-create.json` so the create request includes `DataFieldConfig`; `--schema @schema.json` alone can fail with `MissingParameter.DefaultFieldStrategy`.
 
 If the data looks like video content (for example `video_url`, `duration`, `content_type=video`, `parent_content_id`, or `sequence_index`) but the user did not explicitly say `item` or `video`, ask a clarifying question before planning or applying.
+
+## 5. Run Search Tuning
+
+When the user asks for search tuning, ask first whether they have a tuning query set. Use real online queries when available; otherwise tell the user the CLI can generate synthetic queries from dataset samples.
+
+```bash
+vs search tune llm-check --json
+vs search tune query-generate --application-id <app> --dataset-id <dataset> --query-count 100 --json
+vs search tune plan --application-id <app> --dataset-id <dataset> --queries <queryFile> --json
+vs search tune run --application-id <app> --dataset-id <dataset> --queries <queryFile>
+vs search tune report --run-id <run-id> --json
+```
+
+The first version fixes `mode=UserDefined` and tunes only user-defined recall mode, recall weights, keyword match ratio, and max retrieved count. Do not create or update search scenes as a fallback for failed tuning unless the user explicitly asks for scene changes.

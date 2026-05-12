@@ -29,6 +29,8 @@ async function main() {
   await runTest('root-help', testRootHelp);
   await runTest('skill-list', testSkillList);
   await runTest('skill-show', testSkillShow);
+  await runTest('search-tune-help', testSearchTuneHelp);
+  await runTest('search-tune-plan', testSearchTunePlan);
   await runTest('app-list-help', testAppListHelp);
   await runTest('dataset-list-help', testDatasetListHelp);
   await runTest('config-summary-help', testConfigSummaryHelp);
@@ -115,10 +117,13 @@ async function testSkillList() {
   const payload = JSON.parse(stdout);
   const names = payload.skills.map(skill => skill.name).sort();
   assert.deepEqual(names, [
+    'vs-alias-mapping',
+    'vs-app-dataset-bind',
     'vs-chat',
     'vs-item-onboarding',
     'vs-recommend',
     'vs-search',
+    'vs-search-tuning',
     'vs-shared'
   ]);
   return `${command.prefix} skill list --json`;
@@ -128,7 +133,7 @@ async function testSkillShow() {
   const { stdout } = await runCli(['skill', 'show', '--name', 'vs-item-onboarding', '--json']);
   const payload = JSON.parse(stdout);
   assert.equal(payload.name, 'vs-item-onboarding');
-  assert.match(payload.description, /item-level search onboarding/i);
+  assert.match(payload.description, /item-level onboarding/i);
   return `${command.prefix} skill show --name vs-item-onboarding --json`;
 }
 
@@ -136,7 +141,7 @@ async function testDatasetListHelp() {
   const { stdout } = await runCli(['dataset', 'list', '--help']);
   assert.match(stdout, /--type/);
   assert.match(stdout, /--full/);
-  assert.match(stdout, /dataset list \[--type <type> --name <text> --application-id <id> --full\]/i);
+  assert.match(stdout, /dataset list \[--type <type>\] \[--name <text>\] \[--application-id <id>\] \[--full\]/i);
   return `${command.prefix} dataset list --help`;
 }
 
@@ -146,6 +151,66 @@ async function testAppListHelp() {
   return `${command.prefix} app --help`;
 }
 
+async function testSearchTuneHelp() {
+  const { stdout } = await runCli(['search', '--help']);
+  assert.match(stdout, /search tune llm-check/i);
+  assert.match(stdout, /search tune plan/i);
+  assert.match(stdout, /search tune query-generate/i);
+  assert.match(stdout, /search tune run/i);
+  assert.match(stdout, /search tune report/i);
+  return `${command.prefix} search --help`;
+}
+
+async function testSearchTunePlan() {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'viking-acceptance-tune-plan-'));
+  const queriesPath = path.join(workspace, 'queries.jsonl');
+  fs.writeFileSync(
+    queriesPath,
+    [
+      JSON.stringify({ id: 'q1', text: '对象存储' }),
+      JSON.stringify({ id: 'q2', text: 'ECS API' }),
+      JSON.stringify({ id: 'q3', query: { text: '如何创建云服务器实例' } })
+    ].join('\n')
+  );
+
+  const { stdout } = await runCli([
+    'search',
+    'tune',
+    'plan',
+    '--application-id',
+    'app-1',
+    '--dataset-id',
+    'ds-1',
+    '--queries',
+    queriesPath,
+    '--query-count',
+    '2',
+    '--top-k',
+    '5',
+    '--max-strategies',
+    '8',
+    '--json'
+  ]);
+  const payload = JSON.parse(stdout);
+  assert.equal(payload.profile, 'similarity-only');
+  assert.equal(payload.querySource, 'user-provided');
+  assert.equal(payload.estimated.queryCount, 2);
+  assert.equal(payload.estimated.strategyCount, 8);
+  assert.equal(payload.estimated.searchRequests, 16);
+  assert.equal(payload.estimated.maxPointwiseJudgements, 80);
+  assert.deepEqual(payload.fixed.mode, 'UserDefined');
+  assert.ok(payload.tunedParameters.includes('user_defined_recall_mode'));
+  assert.ok(payload.tunedParameters.includes('dense_weight'));
+  assert.ok(payload.tunedParameters.includes('query_keyword_match_percent'));
+  assert.ok(payload.tunedParameters.includes('max_retrieved_num'));
+  assert.ok(payload.excludedParameters.includes('mode'));
+  assert.deepEqual(payload.coverage.mode.values, ['UserDefined']);
+  assert.ok(payload.coverage.user_defined_recall_mode.values.includes('KeywordOnly'));
+  assert.ok(payload.coverage.user_defined_recall_mode.values.includes('SemanticOnly'));
+  assert.ok(payload.coverage.user_defined_recall_mode.values.includes('KeywordSemantic'));
+  return `${command.prefix} search tune plan --application-id app-1 --dataset-id ds-1 --queries ${queriesPath} --json`;
+}
+
 async function testConfigSummaryHelp() {
   const datasetGet = await runCli(['dataset', 'get', '--help']);
   assert.match(datasetGet.stdout, /--full/);
@@ -153,10 +218,11 @@ async function testConfigSummaryHelp() {
   const appDatasetConfigGet = await runCli(['app', 'dataset-config', 'get', '--help']);
   assert.match(appDatasetConfigGet.stdout, /--full/);
 
-  const appOnlineConfigGet = await runCli(['app', 'online-config', 'get', '--help']);
-  assert.match(appOnlineConfigGet.stdout, /--full/);
+  const appHelp = await runCli(['app', '--help']);
+  assert.match(appHelp.stdout, /online-config get/i);
+  assert.match(appHelp.stdout, /--full/);
 
-  return `${command.prefix} dataset get --help && ${command.prefix} app dataset-config get --help && ${command.prefix} app online-config get --help`;
+  return `${command.prefix} dataset get --help && ${command.prefix} app dataset-config get --help && ${command.prefix} app --help`;
 }
 
 async function testItemProfile() {
@@ -221,16 +287,15 @@ async function testItemPlan() {
 async function testHighRiskGuards() {
   const itemApplyHelp = await runCli(['item', 'apply', '--help']);
   assert.match(itemApplyHelp.stdout, /--confirm-review/);
-  assert.match(itemApplyHelp.stdout, /--confirm-recommend-entry-binding/);
 
-  const recommendCreateHelp = await runCli(['recommend', 'scene', 'create', '--help']);
-  assert.match(recommendCreateHelp.stdout, /--confirm-entry-binding/);
+  const recommendHelp = await runCli(['recommend', '--help']);
+  assert.match(recommendHelp.stdout, /--confirm-entry-binding/);
 
   const chatSkill = await runCli(['skill', 'show', '--name', 'vs-chat', '--json']);
   const chatSkillPayload = JSON.parse(chatSkill.stdout);
   assert.match(JSON.stringify(chatSkillPayload.workflow), /not treat the output as NDJSON/i);
 
-  return `${command.prefix} item apply --help && ${command.prefix} recommend scene create --help && ${command.prefix} skill show --name vs-chat --json`;
+  return `${command.prefix} item apply --help && ${command.prefix} recommend --help && ${command.prefix} skill show --name vs-chat --json`;
 }
 
 async function testAuthImportEnv() {

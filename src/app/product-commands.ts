@@ -41,6 +41,13 @@ import {
   runAppDiagnoseWorkflowCommand,
   runDatasetIngestWorkflowCommand
 } from './workflow-commands';
+import {
+  runSearchTuneLlmCheckCommand,
+  runSearchTunePlanCommand,
+  runSearchTuneQueryGenerateCommand,
+  runSearchTuneReportCommand,
+  runSearchTuneRunCommand
+} from './search-tuning-commands';
 
 export interface ServiceCommandOptions extends ServiceConfigInput {
   data?: string;
@@ -1449,7 +1456,12 @@ COMMON FLAGS
         'vs search scene list --application-id <id> [service flags]',
         'vs search scene get --application-id <id> --scene-id <id> [service flags]',
         'vs search scene update --application-id <id> --scene-id <id> [--config @scene.json] [--search-config @search.json] [--query-completion-config @qc.json] [--want-to-search-config @wts.json] [--overview-config @overview.json] [service flags]',
-        'vs search scene delete --application-id <id> --scene-id <id> [service flags]'
+        'vs search scene delete --application-id <id> --scene-id <id> [service flags]',
+        'vs search tune llm-check [--live] [service flags]',
+        'vs search tune plan --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--queries <file>] [--profile similarity-only] [service flags]',
+        'vs search tune query-generate --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--query-count <n>] [service flags]',
+        'vs search tune run --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--queries <file>] [--profile similarity-only] [service flags]',
+        'vs search tune report --run-id <id> [--output-dir <dir>] [service flags]'
       ]
     )}
 
@@ -1521,6 +1533,33 @@ EXAMPLES
   vs dataset create --data @dataset-create.json
   vs item plan --file ./items.json --type item --goal "Build item search" --skip-app
   vs dataset create --data ./.viking/item-plans/<plan>/dataset-create.json`,
+    get: `Get one Viking dataset.
+
+USAGE
+  vs dataset get --id <dataset-id> [--full] [service flags]
+
+KEY FLAGS
+  --id      Target dataset ID.
+  --full    Return the raw GetDataset response.
+
+EXAMPLES
+  vs dataset get --id 123
+  vs dataset get --id 123 --full`,
+    list: `List Viking datasets.
+
+USAGE
+  vs dataset list [--type <type>] [--name <text>] [--application-id <id>] [--full] [service flags]
+
+KEY FLAGS
+  --type            Optional dataset type filter.
+  --name            Optional name filter.
+  --application-id  Optional application ID filter.
+  --full            Return the raw ListDatasets response.
+
+EXAMPLES
+  vs dataset list
+  vs dataset list --type item
+  vs dataset list --name catalog --full`,
     ingest: `Import a batch of records into a dataset with a task-oriented workflow command.
 
 USAGE
@@ -1904,7 +1943,88 @@ EXAMPLES
   vs search scene get --application-id 123 --scene-id abc --format json > scene.json
   vs search scene update --application-id 123 --scene-id abc --config @scene.json
   vs search scene update --application-id 123 --scene-id abc --search-config @search.json
-  vs search scene update --application-id 123 --scene-id abc --data @payload.json`
+  vs search scene update --application-id 123 --scene-id abc --data @payload.json`,
+    'tune:llm-check': `Check the LLM configuration used by search tuning.
+
+USAGE
+  vs search tune llm-check [--live] [service flags]
+
+DESCRIPTION
+  Verifies that VIKING_LLM_BASE_URL, VIKING_LLM_API_KEY or VIKING_LLM_AK/SK, and VIKING_LLM_MODEL
+  resolve to a usable LLM configuration. Pass --live to send a small test request.
+
+EXAMPLES
+  vs search tune llm-check
+  vs search tune llm-check --live --json`,
+    'tune:plan': `Plan first-version automated search evaluation and similarity tuning.
+
+USAGE
+  vs search tune plan --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--queries <file>] [--profile similarity-only] [service flags]
+
+DESCRIPTION
+  Prints the fixed scope, query source, candidate strategy count, cost estimate, and strategy coverage.
+  This command does not call search or LLM services. First-version tuning fixes mode=UserDefined and excludes rerank.
+
+KEY FLAGS
+  --application-id  Target application ID.
+  --dataset-id      Dataset ID.
+  --scene-id        Optional search scene ID.
+  --queries         JSON, JSONL, or CSV query set. If omitted, the plan assumes CLI-generated queries.
+  --query-count     Maximum query count. Default: 100.
+  --top-k           Results judged per query and strategy. Default: 20.
+  --max-strategies  Maximum candidate strategies. Default: 30.
+
+EXAMPLES
+  vs search tune plan --application-id 123 --dataset-id 456 --queries ./queries.jsonl
+  vs search tune plan --application-id 123 --dataset-id 456 --query-count 100 --top-k 20 --max-strategies 30`,
+    'tune:query-generate': `Generate a reusable synthetic query set for search tuning.
+
+USAGE
+  vs search tune query-generate --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--query-count <n>] [--output-dir <dir>] [service flags]
+
+DESCRIPTION
+  Uses dataset samples and the configured CLI LLM to generate a JSONL query set. Review the returned
+  sample queries before passing the query file to \`search tune plan\` and \`search tune run\`.
+
+KEY FLAGS
+  --application-id  Target application ID.
+  --dataset-id      Dataset ID. If omitted, the CLI tries to infer a unique search dataset.
+  --scene-id        Optional search scene ID.
+  --query-count     Maximum query count. Default: 100.
+  --output-dir      Artifact root. Default: .viking/search-tuning.
+
+EXAMPLES
+  vs search tune query-generate --application-id 123 --dataset-id 456 --query-count 100
+  vs search tune query-generate --application-id 123 --dataset-id 456 --output-dir ./.viking/search-tuning`,
+    'tune:run': `Run first-version automated search evaluation and similarity tuning.
+
+USAGE
+  vs search tune run --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--queries <file>] [--profile similarity-only] [service flags]
+
+DESCRIPTION
+  Runs text-query similarity tuning with CLI-managed LLM query generation and pointwise relevance judging.
+  The first version disables personalization in requests and evaluates user-defined recall strategies only.
+
+KEY FLAGS
+  --application-id  Target application ID.
+  --dataset-id      Dataset ID. If omitted, the CLI tries to infer a unique search dataset.
+  --scene-id        Optional search scene ID.
+  --queries         JSON, JSONL, or CSV query set. If omitted, the CLI generates queries from sample items.
+  --query-count     Maximum query count. Default: 100.
+  --top-k           Results judged per query and strategy. Default: 20.
+  --max-strategies  Maximum candidate strategies. Default: 30.
+  --output-dir      Artifact root. Default: .viking/search-tuning.
+
+EXAMPLES
+  vs search tune run --application-id 123 --dataset-id 456 --profile similarity-only
+  vs search tune run --application-id 123 --dataset-id 456 --queries ./queries.jsonl --top-k 20 --max-strategies 30`,
+    'tune:report': `Read a previous search tuning report.
+
+USAGE
+  vs search tune report --run-id <id> [--output-dir <dir>] [service flags]
+
+EXAMPLES
+  vs search tune report --run-id run_2026-05-12T00-00-00Z`
   };
 
   console.log(helpByAction[`${action}:${subAction ?? ''}`] ?? helpByAction[action] ?? `Unknown search subcommand: ${[action, subAction].filter(Boolean).join(' ')}`);
@@ -2299,15 +2419,18 @@ async function runSearchCli(argv: string[]): Promise<void> {
     printSearchCommandHelp(action, argv[1]);
     return;
   }
+  if (action === 'tune' && hasHelpFlag(argv.slice(2))) {
+    printSearchCommandHelp(action, argv[1]);
+    return;
+  }
   const values = parseStandaloneOptions(argv.slice(1));
   const serviceOptions = toStandaloneServiceOptions(values);
   const projectOptions = toProjectScopedOptions(values);
-  const applicationId = requiredString(values['application-id'], '--application-id');
   switch (action) {
     case 'run':
       await runSearchRunCommand({
         ...serviceOptions,
-        applicationId,
+        applicationId: requiredString(values['application-id'], '--application-id'),
         sceneId: optionalString(values['scene-id']),
         datasetId: optionalString(values['dataset-id']),
         query: optionalString(values.query),
@@ -2320,25 +2443,25 @@ async function runSearchCli(argv: string[]): Promise<void> {
         case 'create':
           await runSearchSceneCreateCommand({
             ...projectOptions,
-            applicationId,
+            applicationId: requiredString(values['application-id'], '--application-id'),
             name: optionalString(values.name),
             description: optionalString(values.description)
           });
           return;
         case 'list':
-          await runSearchSceneListCommand({ ...projectOptions, applicationId });
+          await runSearchSceneListCommand({ ...projectOptions, applicationId: requiredString(values['application-id'], '--application-id') });
           return;
         case 'get':
           await runSearchSceneGetCommand({
             ...projectOptions,
-            applicationId,
+            applicationId: requiredString(values['application-id'], '--application-id'),
             sceneId: requiredString(values['scene-id'], '--scene-id')
           });
           return;
         case 'update':
           await runSearchSceneUpdateCommand({
             ...projectOptions,
-            applicationId,
+            applicationId: requiredString(values['application-id'], '--application-id'),
             sceneId: requiredString(values['scene-id'], '--scene-id'),
             name: optionalString(values.name),
             description: optionalString(values.description),
@@ -2352,12 +2475,73 @@ async function runSearchCli(argv: string[]): Promise<void> {
         case 'delete':
           await runSearchSceneDeleteCommand({
             ...projectOptions,
-            applicationId,
+            applicationId: requiredString(values['application-id'], '--application-id'),
             sceneId: requiredString(values['scene-id'], '--scene-id')
           });
           return;
         default:
           throw new Error(`Unknown search scene subcommand: ${subAction}`);
+      }
+    }
+    case 'tune': {
+      const subAction = argv[1];
+      switch (subAction) {
+        case 'llm-check':
+          await runSearchTuneLlmCheckCommand({
+            ...serviceOptions,
+            live: optionalBoolean(values.live)
+          });
+          return;
+        case 'plan':
+          await runSearchTunePlanCommand({
+            ...serviceOptions,
+            projectName: optionalString(values['project-name']),
+            applicationId: requiredString(values['application-id'], '--application-id'),
+            datasetId: optionalString(values['dataset-id']),
+            sceneId: optionalString(values['scene-id']),
+            profile: optionalString(values.profile),
+            queries: optionalString(values.queries),
+            queryCount: parseOptionalInt(optionalString(values['query-count'])),
+            topK: parseOptionalInt(optionalString(values['top-k'])),
+            maxStrategies: parseOptionalInt(optionalString(values['max-strategies']))
+          });
+          return;
+        case 'query-generate':
+          await runSearchTuneQueryGenerateCommand({
+            ...serviceOptions,
+            projectName: optionalString(values['project-name']),
+            applicationId: requiredString(values['application-id'], '--application-id'),
+            datasetId: optionalString(values['dataset-id']),
+            sceneId: optionalString(values['scene-id']),
+            queryCount: parseOptionalInt(optionalString(values['query-count'])),
+            outputDir: optionalString(values['output-dir'])
+          });
+          return;
+        case 'run':
+          await runSearchTuneRunCommand({
+            ...serviceOptions,
+            projectName: optionalString(values['project-name']),
+            applicationId: requiredString(values['application-id'], '--application-id'),
+            datasetId: optionalString(values['dataset-id']),
+            sceneId: optionalString(values['scene-id']),
+            profile: optionalString(values.profile),
+            queries: optionalString(values.queries),
+            queryCount: parseOptionalInt(optionalString(values['query-count'])),
+            topK: parseOptionalInt(optionalString(values['top-k'])),
+            maxStrategies: parseOptionalInt(optionalString(values['max-strategies'])),
+            outputDir: optionalString(values['output-dir'])
+          });
+          return;
+        case 'report':
+          await runSearchTuneReportCommand({
+            ...serviceOptions,
+            projectName: optionalString(values['project-name']),
+            runId: requiredString(values['run-id'], '--run-id'),
+            outputDir: optionalString(values['output-dir'])
+          });
+          return;
+        default:
+          throw new Error(`Unknown search tune subcommand: ${subAction}`);
       }
     }
     default:
@@ -2493,8 +2677,10 @@ function parseStandaloneOptions(argv: string[]) {
       region: { type: 'string' },
       'timeout-ms': { type: 'string' },
       data: { type: 'string' },
+      live: { type: 'boolean' },
       file: { type: 'string' },
       goal: { type: 'string' },
+      profile: { type: 'string' },
       id: { type: 'string' },
       'plan-dir': { type: 'string' },
       name: { type: 'string' },
@@ -2521,6 +2707,11 @@ function parseStandaloneOptions(argv: string[]) {
       version: { type: 'string' },
       config: { type: 'string' },
       query: { type: 'string' },
+      queries: { type: 'string' },
+      'query-count': { type: 'string' },
+      'top-k': { type: 'string' },
+      'max-strategies': { type: 'string' },
+      'run-id': { type: 'string' },
       'search-query': { type: 'string' },
       'chat-message': { type: 'string' },
       'page-size': { type: 'string' },

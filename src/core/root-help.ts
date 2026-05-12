@@ -57,6 +57,12 @@ QUICK START
     vs search run --application-id <app> --query "wireless headphones"
     if the app has multiple datasets, add --dataset-id <dataset>
 
+  Run first-version search tuning
+    vs search tune llm-check
+    vs search tune query-generate --application-id <app> --dataset-id <dataset>
+    vs search tune plan --application-id <app> --dataset-id <dataset> --queries ./queries.jsonl
+    vs search tune run --application-id <app> --dataset-id <dataset> --profile similarity-only
+
 CORE
   ${coreCommands}
 

@@ -4,7 +4,12 @@
 import './node-bootstrap';
 import { Signer } from '@volcengine/openapi';
 import type { RuntimeConfig, SearchCase, SearchDynamic, SearchResponseShape, SearchResultItem } from './types';
-import { describeSearchModeOptions, normalizeSearchMode } from './search-mode';
+import {
+  describeSearchModeOptions,
+  describeUserDefinedRecallModeOptions,
+  normalizeSearchMode,
+  normalizeUserDefinedRecallMode
+} from './search-mode';
 
 export class VikingSearchClient {
   constructor(private readonly config: RuntimeConfig) {}
@@ -23,7 +28,8 @@ export class VikingSearchClient {
       sort_order: searchCase.sort_order,
       output_fields: searchCase.output_fields,
       conditional_boost: searchCase.conditional_boost,
-      disable_personalize: searchCase.disable_personalize
+      disable_personalize: searchCase.disable_personalize,
+      query_keyword_match_percent: searchCase.query_keyword_match_percent
     };
 
     if (searchDynamic && Object.keys(searchDynamic).length > 0) {
@@ -103,6 +109,15 @@ export class VikingSearchClient {
         throw new Error(`Invalid search_dynamic.mode: '${String(input.mode)}'. Allowed values are: ${describeSearchModeOptions()}`);
       }
       output.mode = normalizedMode;
+    }
+    if (input.user_defined_recall_mode !== undefined) {
+      const normalizedMode = normalizeUserDefinedRecallMode(input.user_defined_recall_mode);
+      if (normalizedMode === undefined) {
+        throw new Error(
+          `Invalid search_dynamic.user_defined_recall_mode: '${String(input.user_defined_recall_mode)}'. Allowed values are: ${describeUserDefinedRecallModeOptions()}`
+        );
+      }
+      output.user_defined_recall_mode = normalizedMode;
     }
     return output;
   }

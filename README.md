@@ -41,6 +41,7 @@ With SearchCLI and its installable `Viking skills`, external agents can onboard 
 - `vs item profile | plan | apply` for structured item onboarding.
 - `vs app`, `vs dataset`, and `vs data` for application and dataset management.
 - `vs search run`, `vs recommend run`, and `vs chat run` for runtime verification.
+- `vs search tune query-generate | plan | run | report` for first-version automated text-similarity evaluation and tuning.
 - Installable `Viking skills` so external agents can use the same workflows.
 
 ## Requirements
@@ -144,6 +145,7 @@ The default public skill bundle is:
 - `vs-shared`
 - `vs-item-onboarding`
 - `vs-search`
+- `vs-search-tuning`
 - `vs-chat`
 - `vs-recommend`
 

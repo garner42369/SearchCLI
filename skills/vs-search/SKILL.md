@@ -14,6 +14,8 @@ commands: search run, search scene create, search scene list, search scene get, 
 
 Use this skill for search query verification, scene management, online result checks, recall issues, and runtime configuration debugging.
 
+If the user wants automated batch evaluation or similarity tuning across many queries and strategies, use `vs-search-tuning` instead.
+
 ## Preconditions
 
 - an `application-id` is available
