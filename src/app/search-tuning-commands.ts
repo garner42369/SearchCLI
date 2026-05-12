@@ -7,6 +7,8 @@ import { resolveRuntimeConfig } from '../core/config';
 import { resolveLlmClientConfig, requestChatCompletion } from '../core/llm-client';
 import { resolveServiceConfig, type ServiceConfigInput } from '../core/service-config';
 import { writeText } from '../core/files';
+import { VikingOpenApiClient } from '../core/openapi-client';
+import { buildSceneApplyDraft, withSceneId } from '../core/search-tuning/apply';
 import { buildSearchTuningPlan } from '../core/search-tuning/plan';
 import { inspectTuningContext } from '../core/search-tuning/inspect';
 import { loadTuningReport, loadTuningRunState, runSearchTuning, type TuningProgressEvent } from '../core/search-tuning/runner';
@@ -52,6 +54,16 @@ export interface SearchTuneQueryGenerateOptions extends SearchTuneServiceOptions
 export interface SearchTuneReportOptions extends SearchTuneServiceOptions {
   runId: string;
   outputDir?: string;
+}
+
+export interface SearchTuneApplyOptions extends SearchTuneServiceOptions {
+  applicationId: string;
+  runId: string;
+  outputDir?: string;
+  sceneName?: string;
+  sceneDescription?: string;
+  dryRun?: boolean;
+  confirmCreateScene?: boolean;
 }
 
 export interface SearchTuneLlmCheckOptions extends SearchTuneServiceOptions {
@@ -228,6 +240,57 @@ export async function runSearchTuneReportCommand(options: SearchTuneReportOption
   await printOutput(report);
 }
 
+export async function runSearchTuneApplyCommand(options: SearchTuneApplyOptions): Promise<void> {
+  const report = await loadTuningReport(options.outputDir, options.runId);
+  const draft = buildSceneApplyDraft(report, {
+    applicationId: options.applicationId,
+    projectName: options.projectName,
+    sceneName: options.sceneName,
+    sceneDescription: options.sceneDescription
+  });
+
+  if (options.dryRun) {
+    await printOutput({
+      ok: true,
+      dryRun: true,
+      ...draft,
+      notes: buildApplyNotes(draft.unappliedRequestParams)
+    });
+    return;
+  }
+
+  if (!options.confirmCreateScene) {
+    throw new Error('Refusing to create a search scene without --confirm-create-scene. Use --dry-run to inspect the payload first.');
+  }
+
+  const serviceConfig = resolveServiceConfig(toServiceConfigInput(options));
+  const openapi = new VikingOpenApiClient(serviceConfig);
+  const createResponse = await openapi.post('/api/v1/CreateSearchScene', draft.createPayload);
+  const sceneId = extractSceneId(createResponse);
+  if (!sceneId) {
+    throw new Error('CreateSearchScene did not return SceneID.');
+  }
+  const onlinePayload = withSceneId(draft.onlinePayload, sceneId);
+  const onlineResponse = await openapi.post('/api/v1/OnlineSearchScene', onlinePayload);
+  const readbackResponse = await openapi.post('/api/v1/GetSearchScene', {
+    AppID: options.applicationId,
+    ProjectName: options.projectName,
+    SceneID: sceneId
+  });
+
+  await printOutput({
+    ok: true,
+    dryRun: false,
+    sceneId,
+    ...draft,
+    onlinePayload,
+    createResponse,
+    onlineResponse,
+    readbackResponse,
+    notes: buildApplyNotes(draft.unappliedRequestParams)
+  });
+}
+
 function countBy(values: string[]): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const value of values) {
@@ -240,6 +303,37 @@ function writeProgressEvent(event: TuningProgressEvent): void {
   const progress =
     event.total && event.total > 0 && event.completed !== undefined ? ` [${event.completed}/${event.total}]` : '';
   process.stderr.write(`[search-tune:${event.phase}]${progress} ${event.message}\n`);
+}
+
+function extractSceneId(response: unknown): string | undefined {
+  const candidates = [
+    response,
+    isRecord(response) ? response.Result : undefined,
+    isRecord(response) ? response.result : undefined
+  ];
+  for (const candidate of candidates) {
+    if (!isRecord(candidate)) continue;
+    for (const key of ['SceneID', 'SceneId', 'scene_id', 'sceneId']) {
+      const value = candidate[key];
+      if (typeof value === 'string' && value.trim()) return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function buildApplyNotes(unappliedRequestParams: { query_keyword_match_percent?: number; disable_personalize?: boolean }): string[] {
+  const notes: string[] = [];
+  if (Object.keys(unappliedRequestParams).length > 0) {
+    notes.push('Request-only params are not persisted in scene config; keep them in caller request payloads when needed.');
+  }
+  if (unappliedRequestParams.query_keyword_match_percent !== undefined) {
+    notes.push('query_keyword_match_percent is a request-level parameter and is reported as unappliedRequestParams.');
+  }
+  return notes;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function toServiceConfigInput(options: SearchTuneServiceOptions): ServiceConfigInput {

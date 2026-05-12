@@ -5,7 +5,7 @@ category: search
 applies_to: codex, agents, external-agent
 requires_cli: ">=0.1.0"
 keywords: search tuning, search evaluation, llm judge, ndcg, query generation, similarity tuning
-commands: search tune llm-check, search tune query-generate, search tune plan, search tune run, search tune report, app status, doctor
+commands: search tune llm-check, search tune query-generate, search tune plan, search tune run, search tune report, search tune apply, app status, doctor
 ---
 
 # Viking Search Tuning
@@ -31,6 +31,7 @@ This first version is for text-query similarity only. It fixes `mode=UserDefined
 - `search tune plan`: show query source, candidate strategies, estimated requests/labels, and parameter coverage before running
 - `search tune run`: generate or load queries, run candidate search strategies, label top results, compute metrics, and write artifacts; use `--resume-run-id <run-id>` to continue an interrupted run
 - `search tune report`: read a previous tuning report
+- `search tune apply`: create a new candidate search scene from a completed tuning report recommendation
 - `app status` / `doctor`: verify app and local environment readiness
 
 ## Workflow
@@ -65,7 +66,12 @@ This first version is for text-query similarity only. It fixes `mode=UserDefined
    If the process is interrupted, resume with `vs search tune run --application-id <id> --resume-run-id <run-id>`.
 9. Read and summarize the generated report:
    - `vs search tune report --run-id <run-id> --json`
-10. Explain the recommended strategy, metric deltas, parameter coverage, and risk notes. Treat the output as a recommendation, not an automatic production change.
+10. Explain the recommended strategy, metric deltas, parameter coverage, and risk notes. Treat the output as a recommendation.
+11. If the user asks to materialize the recommendation as a candidate scene, inspect first:
+   - `vs search tune apply --application-id <id> --run-id <run-id> --dry-run --json`
+   Explain `unappliedRequestParams`; request-only params such as `query_keyword_match_percent` are not persisted in scene config.
+12. If the user accepts the dry-run payload, create a new candidate scene:
+   - `vs search tune apply --application-id <id> --run-id <run-id> --confirm-create-scene --json`
 
 ## Customer Environment Principle
 
@@ -81,10 +87,10 @@ This first version is for text-query similarity only. It fixes `mode=UserDefined
 - Do not run tuning before `search tune plan` has been shown and summarized.
 - Do not let `search tune run` auto-generate queries during agent-led tuning. If the user has no query set, run `search tune query-generate`, show query samples, and then pass the generated `queryFile` to `plan` and `run`.
 - Do not run tuning until `search tune llm-check` succeeds or the user provides a query/label path supported by a future workflow.
-- Do not present the recommendation as an online change; the first version writes reports and recommended config artifacts only.
+- Do not present the recommendation as an online change. `search tune apply` creates a new candidate scene only; it does not switch the default entrance.
 - If a tuning process is interrupted, prefer `--resume-run-id` over starting a duplicate run with the same query set and strategy space.
 - Do not tune or attribute changes to rerank, personalization, hotness, boost/bury, sort rules, serving controls, or business rules in this first-version workflow.
-- Do not create, update, publish, or switch search scenes as a fallback for failed automatic tuning unless the user explicitly asks for scene changes.
+- Do not create, update, publish, or switch search scenes as a fallback for failed automatic tuning. Only use `search tune apply` after a completed report and explicit user approval.
 - Do not call a result "optimal" or "best" unless a completed `search tune run` report exists. Without a report, call it manual candidate validation or a tool failure diagnosis.
 - Do not delete or prune `.viking/search-tuning` artifacts unless the user explicitly asks.
 - If `search tune run` generates queries automatically, tell the user the query set is synthetic and should be reviewed for high-risk usage.

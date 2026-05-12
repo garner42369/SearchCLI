@@ -160,6 +160,9 @@ SearchCLI is an interactive AI search command-line tool. Below is the list of cu
 *   `vs search tune run --application-id <id>`
     *   Usage: `vs search tune run --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--queries <file>] [--resume-run-id <id>] [--profile similarity-only] [--query-count <n>] [--top-k <n>] [--max-strategies <n>] [--output-dir <dir>] [service flags]`
     *   Description: run first-version text-query similarity evaluation and tuning with LLM query generation and pointwise relevance judging; writes `run-state.json`, `rankings.jsonl`, `labels-used.jsonl`, and `partial-metrics.json` during execution so interrupted runs can be resumed
+*   `vs search tune apply --application-id <id> --run-id <id>`
+    *   Usage: `vs search tune apply --application-id <id> --run-id <id> [--scene-name <name>] [--scene-description <text>] [--dry-run | --confirm-create-scene] [--output-dir <dir>] [service flags]`
+    *   Description: create a new search scene from a completed tuning report recommendation; request-only params such as `query_keyword_match_percent` are returned as `unappliedRequestParams`
 *   `vs search tune report --run-id <id>`
     *   Usage: `vs search tune report --run-id <id> [--output-dir <dir>] [service flags]`
     *   Description: read a previous search tuning report

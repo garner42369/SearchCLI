@@ -43,6 +43,7 @@ import {
 } from './workflow-commands';
 import {
   runSearchTuneLlmCheckCommand,
+  runSearchTuneApplyCommand,
   runSearchTunePlanCommand,
   runSearchTuneQueryGenerateCommand,
   runSearchTuneReportCommand,
@@ -1461,6 +1462,7 @@ COMMON FLAGS
         'vs search tune plan --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--queries <file>] [--profile similarity-only] [service flags]',
         'vs search tune query-generate --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--query-count <n>] [service flags]',
         'vs search tune run --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--queries <file>] [--resume-run-id <id>] [--profile similarity-only] [service flags]',
+        'vs search tune apply --application-id <id> --run-id <id> [--dry-run | --confirm-create-scene] [service flags]',
         'vs search tune report --run-id <id> [--output-dir <dir>] [service flags]'
       ]
     )}
@@ -2021,6 +2023,29 @@ KEY FLAGS
 EXAMPLES
   vs search tune run --application-id 123 --dataset-id 456 --profile similarity-only
   vs search tune run --application-id 123 --dataset-id 456 --queries ./queries.jsonl --top-k 20 --max-strategies 30`,
+    'tune:apply': `Create a new search scene from a completed tuning report recommendation.
+
+USAGE
+  vs search tune apply --application-id <id> --run-id <id> [--scene-name <name>] [--scene-description <text>] [--dry-run | --confirm-create-scene] [service flags]
+
+DESCRIPTION
+  Loads a completed tuning report, converts the recommended SearchDynamic into SearchConfig.RetrieveConfigs[0],
+  creates a new search scene, publishes it with OnlineSearchScene, and reads it back.
+  Request-only params such as query_keyword_match_percent cannot be persisted in scene config and are returned
+  as unappliedRequestParams. Use --dry-run first to inspect payloads.
+
+KEY FLAGS
+  --application-id         Target application ID.
+  --run-id                 Completed tuning run ID.
+  --scene-name             Optional new scene name.
+  --scene-description      Optional new scene description.
+  --dry-run                Print payloads without creating a scene.
+  --confirm-create-scene   Required for real scene creation.
+  --output-dir             Artifact root. Default: .viking/search-tuning.
+
+EXAMPLES
+  vs search tune apply --application-id 123 --run-id run_2026-05-12T00-00-00Z --dry-run
+  vs search tune apply --application-id 123 --run-id run_2026-05-12T00-00-00Z --confirm-create-scene`,
     'tune:report': `Read a previous search tuning report.
 
 USAGE
@@ -2536,6 +2561,19 @@ async function runSearchCli(argv: string[]): Promise<void> {
             resumeRunId: optionalString(values['resume-run-id'])
           });
           return;
+        case 'apply':
+          await runSearchTuneApplyCommand({
+            ...serviceOptions,
+            projectName: optionalString(values['project-name']),
+            applicationId: requiredString(values['application-id'], '--application-id'),
+            runId: requiredString(values['run-id'], '--run-id'),
+            outputDir: optionalString(values['output-dir']),
+            sceneName: optionalString(values['scene-name']),
+            sceneDescription: optionalString(values['scene-description']),
+            dryRun: optionalBoolean(values['dry-run']),
+            confirmCreateScene: optionalBoolean(values['confirm-create-scene'])
+          });
+          return;
         case 'report':
           await runSearchTuneReportCommand({
             ...serviceOptions,
@@ -2717,6 +2755,9 @@ function parseStandaloneOptions(argv: string[]) {
       'max-strategies': { type: 'string' },
       'run-id': { type: 'string' },
       'resume-run-id': { type: 'string' },
+      'scene-name': { type: 'string' },
+      'scene-description': { type: 'string' },
+      'confirm-create-scene': { type: 'boolean' },
       'search-query': { type: 'string' },
       'chat-message': { type: 'string' },
       'page-size': { type: 'string' },

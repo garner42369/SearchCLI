@@ -31,6 +31,7 @@ async function main() {
   await runTest('skill-show', testSkillShow);
   await runTest('search-tune-help', testSearchTuneHelp);
   await runTest('search-tune-plan', testSearchTunePlan);
+  await runTest('search-tune-apply-dry-run', testSearchTuneApplyDryRun);
   await runTest('search-tune-run-help', testSearchTuneRunHelp);
   await runTest('app-list-help', testAppListHelp);
   await runTest('dataset-list-help', testDatasetListHelp);
@@ -158,6 +159,7 @@ async function testSearchTuneHelp() {
   assert.match(stdout, /search tune plan/i);
   assert.match(stdout, /search tune query-generate/i);
   assert.match(stdout, /search tune run/i);
+  assert.match(stdout, /search tune apply/i);
   assert.match(stdout, /search tune report/i);
   return `${command.prefix} search --help`;
 }
@@ -218,6 +220,78 @@ async function testSearchTuneRunHelp() {
   assert.match(stdout, /run-state\.json/);
   assert.match(stdout, /partial-metrics\.json/);
   return `${command.prefix} search tune run --help`;
+}
+
+async function testSearchTuneApplyDryRun() {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'viking-acceptance-tune-apply-'));
+  const runId = 'run_acceptance';
+  const runDir = path.join(workspace, 'runs', runId);
+  fs.mkdirSync(runDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(runDir, 'report.json'),
+    JSON.stringify(
+      {
+        runId,
+        generatedAt: '2026-05-12T00:00:00Z',
+        applicationId: 'app-1',
+        datasetId: 'ds-1',
+        profile: 'similarity-only',
+        querySource: 'user-provided',
+        topK: 5,
+        queryCount: 2,
+        strategyCount: 1,
+        labelCount: 4,
+        recommendedStrategyId: 'ks-test',
+        strategyCoverage: {},
+        strategies: [
+          {
+            id: 'ks-test',
+            title: 'Keyword + semantic test',
+            searchDynamic: {
+              mode: 'UserDefined',
+              user_defined_recall_mode: 'KeywordSemantic',
+              dense_weight: 0.5,
+              text_weight: 0.5,
+              max_retrieved_num: 100,
+              rerank_enabled: false
+            },
+            requestParams: {
+              query_keyword_match_percent: 0.5,
+              disable_personalize: true
+            }
+          }
+        ],
+        metrics: [],
+        artifacts: {}
+      },
+      null,
+      2
+    )
+  );
+
+  const { stdout } = await runCli([
+    'search',
+    'tune',
+    'apply',
+    '--application-id',
+    'app-1',
+    '--run-id',
+    runId,
+    '--output-dir',
+    workspace,
+    '--dry-run',
+    '--json'
+  ]);
+  const payload = JSON.parse(stdout);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.dryRun, true);
+  assert.equal(payload.createPayload.AppID, 'app-1');
+  assert.equal(payload.onlinePayload.Config.SearchConfig.RetrieveConfigs[0].Mode, 4);
+  assert.equal(payload.onlinePayload.Config.SearchConfig.RetrieveConfigs[0].UserDefinedRecallMode, 0);
+  assert.equal(payload.onlinePayload.Config.SearchConfig.RetrieveConfigs[0].MaxRecallNum, 100);
+  assert.equal(payload.onlinePayload.Config.SearchConfig.RetrieveConfigs[0].DenseWeight, 0.5);
+  assert.equal(payload.unappliedRequestParams.query_keyword_match_percent, 0.5);
+  return `${command.prefix} search tune apply --application-id app-1 --run-id ${runId} --output-dir ${workspace} --dry-run --json`;
 }
 
 async function testConfigSummaryHelp() {

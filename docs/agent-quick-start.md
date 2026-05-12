@@ -132,9 +132,11 @@ vs search tune query-generate --application-id <app> --dataset-id <dataset> --qu
 vs search tune plan --application-id <app> --dataset-id <dataset> --queries <queryFile> --json
 vs search tune run --application-id <app> --dataset-id <dataset> --queries <queryFile>
 vs search tune report --run-id <run-id> --json
+vs search tune apply --application-id <app> --run-id <run-id> --dry-run
+vs search tune apply --application-id <app> --run-id <run-id> --confirm-create-scene
 ```
 
-The first version fixes `mode=UserDefined` and tunes only user-defined recall mode, recall weights, keyword match ratio, and max retrieved count. Do not create or update search scenes as a fallback for failed tuning unless the user explicitly asks for scene changes.
+The first version fixes `mode=UserDefined` and tunes only user-defined recall mode, recall weights, keyword match ratio, and max retrieved count. `search tune apply` creates a new candidate scene; it does not switch the default entrance.
 
 If a run is interrupted, inspect `.viking/search-tuning/runs/<run-id>/run-state.json` and resume with:
 
