@@ -135,3 +135,9 @@ vs search tune report --run-id <run-id> --json
 ```
 
 The first version fixes `mode=UserDefined` and tunes only user-defined recall mode, recall weights, keyword match ratio, and max retrieved count. Do not create or update search scenes as a fallback for failed tuning unless the user explicitly asks for scene changes.
+
+If a run is interrupted, inspect `.viking/search-tuning/runs/<run-id>/run-state.json` and resume with:
+
+```bash
+vs search tune run --application-id <app> --resume-run-id <run-id>
+```

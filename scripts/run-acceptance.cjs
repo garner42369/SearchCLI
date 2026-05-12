@@ -31,6 +31,7 @@ async function main() {
   await runTest('skill-show', testSkillShow);
   await runTest('search-tune-help', testSearchTuneHelp);
   await runTest('search-tune-plan', testSearchTunePlan);
+  await runTest('search-tune-run-help', testSearchTuneRunHelp);
   await runTest('app-list-help', testAppListHelp);
   await runTest('dataset-list-help', testDatasetListHelp);
   await runTest('config-summary-help', testConfigSummaryHelp);
@@ -209,6 +210,14 @@ async function testSearchTunePlan() {
   assert.ok(payload.coverage.user_defined_recall_mode.values.includes('SemanticOnly'));
   assert.ok(payload.coverage.user_defined_recall_mode.values.includes('KeywordSemantic'));
   return `${command.prefix} search tune plan --application-id app-1 --dataset-id ds-1 --queries ${queriesPath} --json`;
+}
+
+async function testSearchTuneRunHelp() {
+  const { stdout } = await runCli(['search', 'tune', 'run', '--help']);
+  assert.match(stdout, /--resume-run-id/);
+  assert.match(stdout, /run-state\.json/);
+  assert.match(stdout, /partial-metrics\.json/);
+  return `${command.prefix} search tune run --help`;
 }
 
 async function testConfigSummaryHelp() {

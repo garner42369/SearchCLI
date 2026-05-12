@@ -29,7 +29,7 @@ This first version is for text-query similarity only. It fixes `mode=UserDefined
 - `search tune llm-check`: verify CLI-managed LLM configuration
 - `search tune query-generate`: generate a reusable synthetic query set from dataset samples when the user has no query set
 - `search tune plan`: show query source, candidate strategies, estimated requests/labels, and parameter coverage before running
-- `search tune run`: generate or load queries, run candidate search strategies, label top results, compute metrics, and write artifacts
+- `search tune run`: generate or load queries, run candidate search strategies, label top results, compute metrics, and write artifacts; use `--resume-run-id <run-id>` to continue an interrupted run
 - `search tune report`: read a previous tuning report
 - `app status` / `doctor`: verify app and local environment readiness
 
@@ -58,9 +58,14 @@ This first version is for text-query similarity only. It fixes `mode=UserDefined
 7. Run tuning only after the plan is acceptable:
    - with user queries: `vs search tune run --application-id <id> --dataset-id <dataset> --queries <file> --profile similarity-only`
    - with generated queries: use the `queryFile` returned by `query-generate`
-8. Read and summarize the generated report:
+8. While a run is active, use the artifact paths from progress output if troubleshooting is needed:
+   - `run-state.json`: current status, completed searches, labels, and resume metadata
+   - `partial-metrics.json`: partial metrics from completed query/strategy pairs
+   - `rankings.jsonl` and `labels-used.jsonl`: completed rankings and labels used by the run
+   If the process is interrupted, resume with `vs search tune run --application-id <id> --resume-run-id <run-id>`.
+9. Read and summarize the generated report:
    - `vs search tune report --run-id <run-id> --json`
-9. Explain the recommended strategy, metric deltas, parameter coverage, and risk notes. Treat the output as a recommendation, not an automatic production change.
+10. Explain the recommended strategy, metric deltas, parameter coverage, and risk notes. Treat the output as a recommendation, not an automatic production change.
 
 ## Customer Environment Principle
 
@@ -77,6 +82,7 @@ This first version is for text-query similarity only. It fixes `mode=UserDefined
 - Do not let `search tune run` auto-generate queries during agent-led tuning. If the user has no query set, run `search tune query-generate`, show query samples, and then pass the generated `queryFile` to `plan` and `run`.
 - Do not run tuning until `search tune llm-check` succeeds or the user provides a query/label path supported by a future workflow.
 - Do not present the recommendation as an online change; the first version writes reports and recommended config artifacts only.
+- If a tuning process is interrupted, prefer `--resume-run-id` over starting a duplicate run with the same query set and strategy space.
 - Do not tune or attribute changes to rerank, personalization, hotness, boost/bury, sort rules, serving controls, or business rules in this first-version workflow.
 - Do not create, update, publish, or switch search scenes as a fallback for failed automatic tuning unless the user explicitly asks for scene changes.
 - Do not call a result "optimal" or "best" unless a completed `search tune run` report exists. Without a report, call it manual candidate validation or a tool failure diagnosis.

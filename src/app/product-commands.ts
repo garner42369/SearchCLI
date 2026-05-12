@@ -1460,7 +1460,7 @@ COMMON FLAGS
         'vs search tune llm-check [--live] [service flags]',
         'vs search tune plan --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--queries <file>] [--profile similarity-only] [service flags]',
         'vs search tune query-generate --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--query-count <n>] [service flags]',
-        'vs search tune run --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--queries <file>] [--profile similarity-only] [service flags]',
+        'vs search tune run --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--queries <file>] [--resume-run-id <id>] [--profile similarity-only] [service flags]',
         'vs search tune report --run-id <id> [--output-dir <dir>] [service flags]'
       ]
     )}
@@ -1999,11 +1999,13 @@ EXAMPLES
     'tune:run': `Run first-version automated search evaluation and similarity tuning.
 
 USAGE
-  vs search tune run --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--queries <file>] [--profile similarity-only] [service flags]
+  vs search tune run --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--queries <file>] [--resume-run-id <id>] [--profile similarity-only] [service flags]
 
 DESCRIPTION
   Runs text-query similarity tuning with CLI-managed LLM query generation and pointwise relevance judging.
   The first version disables personalization in requests and evaluates user-defined recall strategies only.
+  While running, it writes run-state.json, rankings.jsonl, labels-used.jsonl, and partial-metrics.json
+  under the run artifact directory so interrupted runs can be inspected and resumed.
 
 KEY FLAGS
   --application-id  Target application ID.
@@ -2013,6 +2015,7 @@ KEY FLAGS
   --query-count     Maximum query count. Default: 100.
   --top-k           Results judged per query and strategy. Default: 20.
   --max-strategies  Maximum candidate strategies. Default: 30.
+  --resume-run-id   Resume an incomplete run from its existing artifact directory.
   --output-dir      Artifact root. Default: .viking/search-tuning.
 
 EXAMPLES
@@ -2529,7 +2532,8 @@ async function runSearchCli(argv: string[]): Promise<void> {
             queryCount: parseOptionalInt(optionalString(values['query-count'])),
             topK: parseOptionalInt(optionalString(values['top-k'])),
             maxStrategies: parseOptionalInt(optionalString(values['max-strategies'])),
-            outputDir: optionalString(values['output-dir'])
+            outputDir: optionalString(values['output-dir']),
+            resumeRunId: optionalString(values['resume-run-id'])
           });
           return;
         case 'report':
@@ -2712,6 +2716,7 @@ function parseStandaloneOptions(argv: string[]) {
       'top-k': { type: 'string' },
       'max-strategies': { type: 'string' },
       'run-id': { type: 'string' },
+      'resume-run-id': { type: 'string' },
       'search-query': { type: 'string' },
       'chat-message': { type: 'string' },
       'page-size': { type: 'string' },

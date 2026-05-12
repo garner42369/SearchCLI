@@ -10,7 +10,8 @@ export default class SearchTuneRun extends Command {
 
   static override examples = [
     '<%= config.bin %> search tune run --application-id app --dataset-id ds --profile similarity-only',
-    '<%= config.bin %> search tune run --application-id app --dataset-id ds --queries ./queries.jsonl --top-k 20 --max-strategies 30'
+    '<%= config.bin %> search tune run --application-id app --dataset-id ds --queries ./queries.jsonl --top-k 20 --max-strategies 30',
+    '<%= config.bin %> search tune run --application-id app --resume-run-id run_2026-05-12T00-00-00Z'
   ];
 
   static override flags = {
@@ -23,7 +24,8 @@ export default class SearchTuneRun extends Command {
     'query-count': Flags.integer({ default: 100, description: 'Maximum number of queries to evaluate.' }),
     'top-k': Flags.integer({ default: 20, description: 'Number of search results judged per query and strategy.' }),
     'max-strategies': Flags.integer({ default: 30, description: 'Maximum number of candidate strategies to evaluate.' }),
-    'output-dir': Flags.string({ description: 'Tuning artifact root. Defaults to .viking/search-tuning.' })
+    'output-dir': Flags.string({ description: 'Tuning artifact root. Defaults to .viking/search-tuning.' }),
+    'resume-run-id': Flags.string({ description: 'Resume an incomplete run from run-state.json, rankings.jsonl, labels-used.jsonl, and partial-metrics.json.' })
   };
 
   async run(): Promise<void> {
@@ -44,7 +46,8 @@ export default class SearchTuneRun extends Command {
       queryCount: flags['query-count'],
       topK: flags['top-k'],
       maxStrategies: flags['max-strategies'],
-      outputDir: flags['output-dir']
+      outputDir: flags['output-dir'],
+      resumeRunId: flags['resume-run-id']
     });
   }
 }

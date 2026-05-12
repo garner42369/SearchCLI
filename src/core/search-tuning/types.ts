@@ -122,3 +122,26 @@ export interface TuningRunReportShape {
   metrics: StrategyMetrics[];
   artifacts: Record<string, string>;
 }
+
+export interface TuningRunStateShape {
+  runId: string;
+  generatedAt: string;
+  updatedAt: string;
+  status: 'running' | 'completed' | 'failed';
+  applicationId: string;
+  datasetId: string;
+  sceneId?: string;
+  profile: 'similarity-only';
+  querySource: 'user-provided' | 'generated';
+  topK: number;
+  queryCount: number;
+  strategyCount: number;
+  labelCount: number;
+  completedSearches: number;
+  totalSearches: number;
+  completedLabels: number;
+  totalPossibleLabels: number;
+  recommendedStrategyId?: string;
+  error?: string;
+  artifacts: Record<string, string>;
+}

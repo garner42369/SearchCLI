@@ -158,8 +158,8 @@ SearchCLI is an interactive AI search command-line tool. Below is the list of cu
     *   Usage: `vs search tune query-generate --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--query-count <n>] [--output-dir <dir>] [service flags]`
     *   Description: generate a reusable synthetic JSONL query set from dataset samples with the configured CLI LLM
 *   `vs search tune run --application-id <id>`
-    *   Usage: `vs search tune run --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--queries <file>] [--profile similarity-only] [--query-count <n>] [--top-k <n>] [--max-strategies <n>] [--output-dir <dir>] [service flags]`
-    *   Description: run first-version text-query similarity evaluation and tuning with LLM query generation and pointwise relevance judging
+    *   Usage: `vs search tune run --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--queries <file>] [--resume-run-id <id>] [--profile similarity-only] [--query-count <n>] [--top-k <n>] [--max-strategies <n>] [--output-dir <dir>] [service flags]`
+    *   Description: run first-version text-query similarity evaluation and tuning with LLM query generation and pointwise relevance judging; writes `run-state.json`, `rankings.jsonl`, `labels-used.jsonl`, and `partial-metrics.json` during execution so interrupted runs can be resumed
 *   `vs search tune report --run-id <id>`
     *   Usage: `vs search tune report --run-id <id> [--output-dir <dir>] [service flags]`
     *   Description: read a previous search tuning report

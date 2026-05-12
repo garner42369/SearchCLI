@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import path from 'node:path';
-import { loadSearchCases, writeJson, writeText } from '../files';
+import { access, readFile } from 'node:fs/promises';
+import { loadJsonOrJsonl, loadSearchCases, writeJson, writeText } from '../files';
 import { type LlmClientConfig } from '../llm-client';
 import { VikingSearchClient } from '../search-client';
 import type { RuntimeConfig } from '../types';
@@ -13,7 +14,7 @@ import { generateTuningQueries, loadTuningQueries, searchCaseToTuningQuery } fro
 import { renderTuningMarkdownReport } from './report';
 import { generateSimilarityOnlyStrategies, summarizeStrategyCoverage } from './strategy-generator';
 import { sha256Hex, stableStringify } from './hash';
-import type { JudgeLabel, TuningQuery, TuningRunReportShape, TuningSearchRanking } from './types';
+import type { JudgeLabel, TuningQuery, TuningRunReportShape, TuningRunStateShape, TuningSearchRanking, TuningStrategy, TuningStrategyCoverage } from './types';
 import type { TuningContext } from './inspect';
 
 export interface TuningProgressEvent {
@@ -34,122 +35,196 @@ export interface RunSearchTuningOptions {
   topK: number;
   maxStrategies: number;
   outputDir?: string;
+  resumeRunId?: string;
   onProgress?: (event: TuningProgressEvent) => void;
 }
 
 export async function runSearchTuning(options: RunSearchTuningOptions): Promise<TuningRunReportShape> {
-  const generatedAt = new Date().toISOString();
-  const runId = `run_${generatedAt.replaceAll(':', '-').replace(/\.\d+Z$/, 'Z')}`;
   const rootDir = path.resolve(options.outputDir ?? '.viking/search-tuning');
+  const generatedAt = new Date().toISOString();
+  const runId = options.resumeRunId ?? `run_${generatedAt.replaceAll(':', '-').replace(/\.\d+Z$/, 'Z')}`;
   const runDir = path.join(rootDir, 'runs', runId);
+  const artifacts = buildRunArtifacts(runDir);
   const cachePath = path.join(rootDir, 'cache', 'labels.jsonl');
   const client = new VikingSearchClient(options.runtimeConfig);
   const labelCache = await loadLabelCache(cachePath);
   const judgeProfileHash = buildJudgeProfileHash(options.llmConfig);
-  const queries = await resolveQueries(options);
-  const strategies = generateSimilarityOnlyStrategies(options.maxStrategies);
-  const querySource = options.queriesFile ? 'user-provided' : 'generated';
-  const strategyCoverage = summarizeStrategyCoverage(strategies);
-  const rankings: TuningSearchRanking[] = [];
-  const labelsUsed = new Map<string, JudgeLabel>();
+  const setup = options.resumeRunId
+    ? await loadExistingRunSetup(artifacts)
+    : await createNewRunSetup({ ...options, runId, generatedAt, artifacts });
+  const { queries, strategies, querySource, strategyCoverage } = setup;
+  const rankings = options.resumeRunId ? await loadExistingRankings(artifacts.rankings) : [];
+  const labelsUsed = options.resumeRunId ? await loadExistingLabels(artifacts.labelsUsed) : new Map<string, JudgeLabel>();
+  const completedRankingKeys = new Set(rankings.map(ranking => buildRankingKey(ranking.strategyId, ranking.queryId)));
   const totalSearches = strategies.length * queries.length;
   const totalPossibleLabels = totalSearches * options.topK;
-  let completedSearches = 0;
-  let completedLabels = 0;
+  let completedSearches = completedRankingKeys.size;
+  let completedLabels = labelsUsed.size;
 
   options.onProgress?.({
     phase: 'start',
-    message: `Starting search tuning: ${queries.length} queries, ${strategies.length} strategies, topK=${options.topK}, up to ${totalPossibleLabels} pointwise judgements.`,
-    completed: 0,
+    message: `${options.resumeRunId ? 'Resuming' : 'Starting'} search tuning run ${runId} in ${runDir}: ${queries.length} queries, ${strategies.length} strategies, topK=${options.topK}, up to ${totalPossibleLabels} pointwise judgements.`,
+    completed: completedSearches,
     total: totalSearches
   });
 
-  await writeJson(path.join(runDir, 'context.json'), options.context);
-  await writeText(path.join(runDir, 'queries.jsonl'), toJsonl(queries));
-  await writeJson(path.join(runDir, 'strategies.json'), strategies);
-  await writeJson(path.join(runDir, 'strategy-coverage.json'), strategyCoverage);
+  await writeRunState(artifacts.runState, {
+    runId,
+    generatedAt: setup.generatedAt,
+    updatedAt: new Date().toISOString(),
+    status: 'running',
+    applicationId: options.context.applicationId,
+    datasetId: options.context.datasetId,
+    sceneId: options.context.sceneId,
+    profile: 'similarity-only',
+    querySource,
+    topK: options.topK,
+    queryCount: queries.length,
+    strategyCount: strategies.length,
+    labelCount: labelsUsed.size,
+    completedSearches,
+    totalSearches,
+    completedLabels,
+    totalPossibleLabels,
+    artifacts
+  });
 
-  for (const strategy of strategies) {
-    options.onProgress?.({
-      phase: 'strategy',
-      message: `Evaluating strategy ${strategy.id}.`,
-      completed: completedSearches,
-      total: totalSearches,
-      strategyId: strategy.id
-    });
-    for (const query of queries) {
-      const queryHash = buildQueryHash(query);
+  try {
+    for (const strategy of strategies) {
       options.onProgress?.({
-        phase: 'query',
-        message: `Searching query ${query.id} with strategy ${strategy.id}.`,
+        phase: 'strategy',
+        message: `Evaluating strategy ${strategy.id}.`,
         completed: completedSearches,
         total: totalSearches,
-        strategyId: strategy.id,
-        queryId: query.id
+        strategyId: strategy.id
       });
-      const startedAt = Date.now();
-      const response = await client.search(
-        {
-          id: query.id,
-          query: { text: query.text },
-          dataset_id: options.context.datasetId,
-          page_number: 1,
-          page_size: options.topK,
-          disable_personalize: strategy.requestParams.disable_personalize,
-          query_keyword_match_percent: strategy.requestParams.query_keyword_match_percent
-        },
-        strategy.searchDynamic
-      );
-      const latencyMs = Date.now() - startedAt;
-      const topItems = response.results.slice(0, options.topK);
-
-      rankings.push({
-        strategyId: strategy.id,
-        queryId: query.id,
-        queryHash,
-        queryText: query.text,
-        latencyMs,
-        totalItems: response.totalItems,
-        items: topItems
-      });
-
-      for (const item of topItems) {
-        const itemView = buildItemJudgeView(item);
-        const itemViewHash = sha256Hex(itemView);
-        const cacheKey = buildLabelCacheKey({
-          datasetId: options.context.datasetId,
-          queryHash,
-          itemId: item.id,
-          itemViewHash,
-          judgeProfileHash
-        });
-        let label = labelCache.labels.get(cacheKey);
-        if (!label) {
-          label = await judgeRelevance({
-            llmConfig: options.llmConfig,
-            datasetId: options.context.datasetId,
-            query,
-            queryHash,
-            itemView,
-            itemViewHash,
-            judgeProfileHash,
-            cacheKey
-          });
-          await appendLabel(labelCache, label);
+      for (const query of queries) {
+        const rankingKey = buildRankingKey(strategy.id, query.id);
+        if (completedRankingKeys.has(rankingKey)) {
+          continue;
         }
-        labelsUsed.set(label.cache_key, label);
-        completedLabels += 1;
+        const queryHash = buildQueryHash(query);
         options.onProgress?.({
-          phase: 'label',
-          message: `Label available for query ${query.id}, item ${item.id}.`,
-          completed: completedLabels,
-          total: totalPossibleLabels,
+          phase: 'query',
+          message: `Searching query ${query.id} with strategy ${strategy.id}.`,
+          completed: completedSearches,
+          total: totalSearches,
           strategyId: strategy.id,
           queryId: query.id
         });
+        const startedAt = Date.now();
+        const response = await client.search(
+          {
+            id: query.id,
+            query: { text: query.text },
+            dataset_id: options.context.datasetId,
+            page_number: 1,
+            page_size: options.topK,
+            disable_personalize: strategy.requestParams.disable_personalize,
+            query_keyword_match_percent: strategy.requestParams.query_keyword_match_percent
+          },
+          strategy.searchDynamic
+        );
+        const latencyMs = Date.now() - startedAt;
+        const topItems = response.results.slice(0, options.topK);
+
+        const ranking: TuningSearchRanking = {
+          strategyId: strategy.id,
+          queryId: query.id,
+          queryHash,
+          queryText: query.text,
+          latencyMs,
+          totalItems: response.totalItems,
+          items: topItems
+        };
+
+        for (const item of topItems) {
+          const itemView = buildItemJudgeView(item);
+          const itemViewHash = sha256Hex(itemView);
+          const cacheKey = buildLabelCacheKey({
+            datasetId: options.context.datasetId,
+            queryHash,
+            itemId: item.id,
+            itemViewHash,
+            judgeProfileHash
+          });
+          let label = labelCache.labels.get(cacheKey);
+          if (!label) {
+            label = await judgeRelevance({
+              llmConfig: options.llmConfig,
+              datasetId: options.context.datasetId,
+              query,
+              queryHash,
+              itemView,
+              itemViewHash,
+              judgeProfileHash,
+              cacheKey
+            });
+            await appendLabel(labelCache, label);
+          }
+          labelsUsed.set(label.cache_key, label);
+          completedLabels = labelsUsed.size;
+          options.onProgress?.({
+            phase: 'label',
+            message: `Label available for query ${query.id}, item ${item.id}.`,
+            completed: completedLabels,
+            total: totalPossibleLabels,
+            strategyId: strategy.id,
+            queryId: query.id
+          });
+        }
+
+        rankings.push(ranking);
+        completedRankingKeys.add(rankingKey);
+        completedSearches = completedRankingKeys.size;
+        await writeText(artifacts.rankings, toJsonl(rankings));
+        await writeText(artifacts.labelsUsed, toJsonl([...labelsUsed.values()]));
+        await writeJson(artifacts.partialMetrics, buildPartialMetrics(strategies, rankings, [...labelsUsed.values()]));
+        await writeRunState(artifacts.runState, {
+          runId,
+          generatedAt: setup.generatedAt,
+          updatedAt: new Date().toISOString(),
+          status: 'running',
+          applicationId: options.context.applicationId,
+          datasetId: options.context.datasetId,
+          sceneId: options.context.sceneId,
+          profile: 'similarity-only',
+          querySource,
+          topK: options.topK,
+          queryCount: queries.length,
+          strategyCount: strategies.length,
+          labelCount: labelsUsed.size,
+          completedSearches,
+          totalSearches,
+          completedLabels,
+          totalPossibleLabels,
+          artifacts
+        });
       }
-      completedSearches += 1;
     }
+  } catch (error) {
+    await writeRunState(artifacts.runState, {
+      runId,
+      generatedAt: setup.generatedAt,
+      updatedAt: new Date().toISOString(),
+      status: 'failed',
+      applicationId: options.context.applicationId,
+      datasetId: options.context.datasetId,
+      sceneId: options.context.sceneId,
+      profile: 'similarity-only',
+      querySource,
+      topK: options.topK,
+      queryCount: queries.length,
+      strategyCount: strategies.length,
+      labelCount: labelsUsed.size,
+      completedSearches,
+      totalSearches,
+      completedLabels,
+      totalPossibleLabels,
+      error: error instanceof Error ? error.message : String(error),
+      artifacts
+    });
+    throw error;
   }
 
   options.onProgress?.({
@@ -184,18 +259,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
     strategies,
     metrics,
     artifacts: {
-      context: path.join(runDir, 'context.json'),
-      queries: path.join(runDir, 'queries.jsonl'),
-      strategies: path.join(runDir, 'strategies.json'),
-      strategyCoverage: path.join(runDir, 'strategy-coverage.json'),
-      labelsUsed: path.join(runDir, 'labels-used.jsonl'),
-      rankings: path.join(runDir, 'rankings.jsonl'),
-      metrics: path.join(runDir, 'metrics.json'),
-      recommendation: path.join(runDir, 'recommendation.json'),
-      recommendedSearchDynamic: path.join(runDir, 'recommended-search-dynamic.json'),
-      recommendedRequestParams: path.join(runDir, 'recommended-request-params.json'),
-      reportJson: path.join(runDir, 'report.json'),
-      reportMarkdown: path.join(runDir, 'report.md')
+      ...artifacts
     }
   };
 
@@ -214,6 +278,27 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
   await writeJson(report.artifacts.recommendedRequestParams, recommendation.request_params ?? {});
   await writeJson(report.artifacts.reportJson, report);
   await writeText(report.artifacts.reportMarkdown, renderTuningMarkdownReport(report));
+  await writeRunState(artifacts.runState, {
+    runId,
+    generatedAt: setup.generatedAt,
+    updatedAt: new Date().toISOString(),
+    status: 'completed',
+    applicationId: options.context.applicationId,
+    datasetId: options.context.datasetId,
+    sceneId: options.context.sceneId,
+    profile: 'similarity-only',
+    querySource,
+    topK: options.topK,
+    queryCount: queries.length,
+    strategyCount: strategies.length,
+    labelCount: labels.length,
+    completedSearches,
+    totalSearches,
+    completedLabels,
+    totalPossibleLabels,
+    recommendedStrategyId,
+    artifacts
+  });
   options.onProgress?.({
     phase: 'done',
     message: `Search tuning complete. Recommended strategy: ${recommendedStrategyId ?? '(none)'}.`,
@@ -228,6 +313,12 @@ export async function loadTuningReport(rootDir: string | undefined, runId: strin
   const reportPath = path.resolve(rootDir ?? '.viking/search-tuning', 'runs', runId, 'report.json');
   const raw = await import('node:fs/promises').then(fs => fs.readFile(reportPath, 'utf8'));
   return JSON.parse(raw) as TuningRunReportShape;
+}
+
+export async function loadTuningRunState(rootDir: string | undefined, runId: string): Promise<TuningRunStateShape> {
+  const statePath = path.resolve(rootDir ?? '.viking/search-tuning', 'runs', runId, 'run-state.json');
+  const raw = await readFile(statePath, 'utf8');
+  return JSON.parse(raw) as TuningRunStateShape;
 }
 
 function buildRecommendation(report: TuningRunReportShape): Record<string, unknown> {
@@ -258,6 +349,124 @@ async function resolveQueries(options: RunSearchTuningOptions): Promise<TuningQu
     sampleItems: options.context.sampleItems,
     count: options.queryCount
   });
+}
+
+interface TuningRunSetup {
+  generatedAt: string;
+  queries: TuningQuery[];
+  strategies: TuningStrategy[];
+  querySource: 'user-provided' | 'generated';
+  strategyCoverage: TuningStrategyCoverage;
+}
+
+async function createNewRunSetup(
+  options: RunSearchTuningOptions & {
+    runId: string;
+    generatedAt: string;
+    artifacts: Record<string, string>;
+  }
+): Promise<TuningRunSetup> {
+  const queries = await resolveQueries(options);
+  const strategies = generateSimilarityOnlyStrategies(options.maxStrategies);
+  const strategyCoverage = summarizeStrategyCoverage(strategies);
+  const querySource = options.queriesFile ? 'user-provided' : 'generated';
+
+  await writeJson(options.artifacts.context, options.context);
+  await writeText(options.artifacts.queries, toJsonl(queries));
+  await writeJson(options.artifacts.strategies, strategies);
+  await writeJson(options.artifacts.strategyCoverage, strategyCoverage);
+  await writeText(options.artifacts.rankings, '');
+  await writeText(options.artifacts.labelsUsed, '');
+  await writeJson(options.artifacts.partialMetrics, []);
+
+  return {
+    generatedAt: options.generatedAt,
+    queries,
+    strategies,
+    querySource,
+    strategyCoverage
+  };
+}
+
+async function loadExistingRunSetup(artifacts: Record<string, string>): Promise<TuningRunSetup> {
+  const state = await loadJsonFile<TuningRunStateShape>(artifacts.runState);
+  const queries = await loadTuningQueries(artifacts.queries);
+  const strategies = await loadJsonFile<TuningStrategy[]>(artifacts.strategies);
+  const strategyCoverage = await loadJsonFile<TuningStrategyCoverage>(artifacts.strategyCoverage);
+  return {
+    generatedAt: state.generatedAt,
+    queries,
+    strategies,
+    querySource: state.querySource,
+    strategyCoverage
+  };
+}
+
+async function loadExistingRankings(filePath: string): Promise<TuningSearchRanking[]> {
+  if (!(await pathExists(filePath))) return [];
+  return loadJsonOrJsonl<TuningSearchRanking>(filePath);
+}
+
+async function loadExistingLabels(filePath: string): Promise<Map<string, JudgeLabel>> {
+  const labels = (await pathExists(filePath)) ? await loadJsonOrJsonl<JudgeLabel>(filePath) : [];
+  return new Map(labels.map(label => [label.cache_key, label]));
+}
+
+function buildRunArtifacts(runDir: string): Record<string, string> {
+  return {
+    runState: path.join(runDir, 'run-state.json'),
+    context: path.join(runDir, 'context.json'),
+    queries: path.join(runDir, 'queries.jsonl'),
+    strategies: path.join(runDir, 'strategies.json'),
+    strategyCoverage: path.join(runDir, 'strategy-coverage.json'),
+    labelsUsed: path.join(runDir, 'labels-used.jsonl'),
+    rankings: path.join(runDir, 'rankings.jsonl'),
+    partialMetrics: path.join(runDir, 'partial-metrics.json'),
+    metrics: path.join(runDir, 'metrics.json'),
+    recommendation: path.join(runDir, 'recommendation.json'),
+    recommendedSearchDynamic: path.join(runDir, 'recommended-search-dynamic.json'),
+    recommendedRequestParams: path.join(runDir, 'recommended-request-params.json'),
+    reportJson: path.join(runDir, 'report.json'),
+    reportMarkdown: path.join(runDir, 'report.md')
+  };
+}
+
+function buildPartialMetrics(strategies: TuningStrategy[], rankings: TuningSearchRanking[], labels: JudgeLabel[]) {
+  const metrics = strategies.map(strategy =>
+    computeStrategyMetrics({
+      strategyId: strategy.id,
+      rankings: rankings.filter(ranking => ranking.strategyId === strategy.id),
+      labels
+    })
+  );
+  return {
+    generatedAt: new Date().toISOString(),
+    completedSearches: rankings.length,
+    recommendedStrategyId: chooseRecommendedStrategy(metrics),
+    metrics
+  };
+}
+
+async function writeRunState(filePath: string, state: TuningRunStateShape): Promise<void> {
+  await writeJson(filePath, state);
+}
+
+async function loadJsonFile<T>(filePath: string): Promise<T> {
+  const raw = await readFile(filePath, 'utf8');
+  return JSON.parse(raw) as T;
+}
+
+async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function buildRankingKey(strategyId: string, queryId: string): string {
+  return `${strategyId}\u0000${queryId}`;
 }
 
 function buildQueryHash(query: TuningQuery): string {

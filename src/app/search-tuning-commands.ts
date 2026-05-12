@@ -9,7 +9,7 @@ import { resolveServiceConfig, type ServiceConfigInput } from '../core/service-c
 import { writeText } from '../core/files';
 import { buildSearchTuningPlan } from '../core/search-tuning/plan';
 import { inspectTuningContext } from '../core/search-tuning/inspect';
-import { loadTuningReport, runSearchTuning, type TuningProgressEvent } from '../core/search-tuning/runner';
+import { loadTuningReport, loadTuningRunState, runSearchTuning, type TuningProgressEvent } from '../core/search-tuning/runner';
 import { generateTuningQueries } from '../core/search-tuning/query-generator';
 import { stableStringify } from '../core/search-tuning/hash';
 
@@ -27,6 +27,7 @@ export interface SearchTuneRunOptions extends SearchTuneServiceOptions {
   maxStrategies?: number;
   outputDir?: string;
   profile?: string;
+  resumeRunId?: string;
 }
 
 export interface SearchTunePlanOptions extends SearchTuneServiceOptions {
@@ -101,29 +102,41 @@ export async function runSearchTuneRunCommand(options: SearchTuneRunOptions): Pr
   }
 
   const serviceConfig = resolveServiceConfig(toServiceConfigInput(options));
-  const context = await inspectTuningContext({
-    config: serviceConfig,
-    applicationId: options.applicationId,
-    datasetId: options.datasetId,
-    sceneId: options.sceneId,
-    sampleSize: 20
-  });
+  const resumeState = options.resumeRunId ? await loadTuningRunState(options.outputDir, options.resumeRunId) : undefined;
+  if (resumeState && resumeState.applicationId !== options.applicationId) {
+    throw new Error(
+      `Cannot resume ${options.resumeRunId} for application ${options.applicationId}; run-state.json belongs to application ${resumeState.applicationId}.`
+    );
+  }
+  const context = resumeState
+    ? await loadResumeContext(resumeState)
+    : await inspectTuningContext({
+        config: serviceConfig,
+        applicationId: options.applicationId,
+        datasetId: options.datasetId,
+        sceneId: options.sceneId,
+        sampleSize: 20
+      });
+  const effectiveTopK = resumeState?.topK ?? options.topK ?? 20;
+  const effectiveQueryCount = resumeState?.queryCount ?? options.queryCount ?? 100;
+  const effectiveMaxStrategies = resumeState?.strategyCount ?? options.maxStrategies ?? 30;
   const runtimeConfig = resolveRuntimeConfig({
     ...toRuntimeConfigInput(options),
     applicationId: options.applicationId,
     datasetId: context.datasetId,
-    sceneId: options.sceneId,
-    defaultPageSize: options.topK ?? 20
+    sceneId: context.sceneId ?? options.sceneId,
+    defaultPageSize: effectiveTopK
   });
   const report = await runSearchTuning({
     runtimeConfig,
     context,
     llmConfig,
     queriesFile: options.queries,
-    queryCount: options.queryCount ?? 100,
-    topK: options.topK ?? 20,
-    maxStrategies: options.maxStrategies ?? 30,
+    queryCount: effectiveQueryCount,
+    topK: effectiveTopK,
+    maxStrategies: effectiveMaxStrategies,
     outputDir: options.outputDir,
+    resumeRunId: options.resumeRunId,
     onProgress: writeProgressEvent
   });
 
@@ -135,8 +148,18 @@ export async function runSearchTuneRunCommand(options: SearchTuneRunOptions): Pr
     recommendation: report.artifacts.recommendation,
     recommendedSearchDynamic: report.artifacts.recommendedSearchDynamic,
     recommendedRequestParams: report.artifacts.recommendedRequestParams,
+    runState: report.artifacts.runState,
+    partialMetrics: report.artifacts.partialMetrics,
+    rankings: report.artifacts.rankings,
+    labelsUsed: report.artifacts.labelsUsed,
     recommendedStrategyId: report.recommendedStrategyId
   });
+}
+
+async function loadResumeContext(state: Awaited<ReturnType<typeof loadTuningRunState>>) {
+  const contextPath = state.artifacts.context;
+  const raw = await import('node:fs/promises').then(fs => fs.readFile(contextPath, 'utf8'));
+  return JSON.parse(raw) as Awaited<ReturnType<typeof inspectTuningContext>>;
 }
 
 export async function runSearchTunePlanCommand(options: SearchTunePlanOptions): Promise<void> {

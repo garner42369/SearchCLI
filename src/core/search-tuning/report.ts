@@ -67,6 +67,12 @@ export function renderTuningMarkdownReport(report: TuningRunReportShape): string
     );
   }
   lines.push('');
+  lines.push('## Artifacts');
+  lines.push('');
+  for (const [name, artifactPath] of Object.entries(report.artifacts)) {
+    lines.push(`- \`${name}\`: \`${artifactPath}\``);
+  }
+  lines.push('');
   lines.push('## Notes');
   lines.push('');
   lines.push('- This first version evaluates text-query similarity only.');

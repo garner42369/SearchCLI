@@ -62,6 +62,7 @@ QUICK START
     vs search tune query-generate --application-id <app> --dataset-id <dataset>
     vs search tune plan --application-id <app> --dataset-id <dataset> --queries ./queries.jsonl
     vs search tune run --application-id <app> --dataset-id <dataset> --profile similarity-only
+    vs search tune run --application-id <app> --resume-run-id <run-id>
 
 CORE
   ${coreCommands}
