@@ -28,6 +28,7 @@ export interface SearchTuneRunOptions extends SearchTuneServiceOptions {
   topK?: number;
   maxStrategies?: number;
   searchConcurrency?: number;
+  llmConcurrency?: number;
   outputDir?: string;
   profile?: string;
   resumeRunId?: string;
@@ -134,6 +135,7 @@ export async function runSearchTuneRunCommand(options: SearchTuneRunOptions): Pr
   const effectiveQueryCount = resumeState?.queryCount ?? options.queryCount ?? 100;
   const effectiveMaxStrategies = resumeState?.strategyCount ?? options.maxStrategies ?? 30;
   const effectiveSearchConcurrency = resumeState?.searchConcurrency ?? options.searchConcurrency ?? 18;
+  const effectiveLlmConcurrency = options.llmConcurrency ?? resumeState?.llmConcurrency ?? 100;
   const runtimeConfig = resolveRuntimeConfig({
     ...toRuntimeConfigInput(options),
     applicationId: options.applicationId,
@@ -150,6 +152,7 @@ export async function runSearchTuneRunCommand(options: SearchTuneRunOptions): Pr
     topK: effectiveTopK,
     maxStrategies: effectiveMaxStrategies,
     searchConcurrency: effectiveSearchConcurrency,
+    llmConcurrency: effectiveLlmConcurrency,
     outputDir: options.outputDir,
     resumeRunId: options.resumeRunId,
     onProgress: writeProgressEvent

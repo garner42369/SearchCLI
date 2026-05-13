@@ -130,7 +130,7 @@ When the user asks for search tuning, ask first whether they have a tuning query
 vs search tune llm-check --json
 vs search tune query-generate --application-id <app> --dataset-id <dataset> --query-count 100 --json
 vs search tune plan --application-id <app> --dataset-id <dataset> --queries <queryFile> --json
-vs search tune run --application-id <app> --dataset-id <dataset> --queries <queryFile> --search-concurrency 18
+vs search tune run --application-id <app> --dataset-id <dataset> --queries <queryFile> --search-concurrency 18 --llm-concurrency 100
 vs search tune report --run-id <run-id> --json
 vs search tune apply --application-id <app> --run-id <run-id> --dry-run
 vs search tune apply --application-id <app> --run-id <run-id> --confirm-create-scene

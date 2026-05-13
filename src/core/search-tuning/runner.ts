@@ -35,6 +35,7 @@ export interface RunSearchTuningOptions {
   topK: number;
   maxStrategies: number;
   searchConcurrency: number;
+  llmConcurrency: number;
   outputDir?: string;
   resumeRunId?: string;
   onProgress?: (event: TuningProgressEvent) => void;
@@ -60,12 +61,13 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
   const totalSearches = strategies.length * queries.length;
   const totalPossibleLabels = totalSearches * options.topK;
   const searchConcurrency = Math.max(1, Math.floor(options.searchConcurrency));
+  const llmConcurrency = Math.max(1, Math.floor(options.llmConcurrency));
   let completedSearches = completedRankingKeys.size;
   let completedLabels = labelsUsed.size;
 
   options.onProgress?.({
     phase: 'start',
-    message: `${options.resumeRunId ? 'Resuming' : 'Starting'} search tuning run ${runId} in ${runDir}: ${queries.length} queries, ${strategies.length} strategies, topK=${options.topK}, searchConcurrency=${searchConcurrency}, up to ${totalPossibleLabels} pointwise judgements.`,
+    message: `${options.resumeRunId ? 'Resuming' : 'Starting'} search tuning run ${runId} in ${runDir}: ${queries.length} queries, ${strategies.length} strategies, topK=${options.topK}, searchConcurrency=${searchConcurrency}, llmConcurrency=${llmConcurrency}, up to ${totalPossibleLabels} pointwise judgements.`,
     completed: completedSearches,
     total: totalSearches
   });
@@ -89,6 +91,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
     completedLabels,
     totalPossibleLabels,
     searchConcurrency,
+    llmConcurrency,
     artifacts
   });
 
@@ -157,7 +160,8 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
           totalSearches,
           completedLabels,
           totalPossibleLabels,
-          searchConcurrency
+          searchConcurrency,
+          llmConcurrency
         }
       });
       if (failures.length > 0) {
@@ -165,42 +169,45 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
       }
     }
 
-    for (const ranking of rankings) {
-      const query = queries.find(item => item.id === ranking.queryId);
-      if (!query) continue;
-      for (const item of ranking.items) {
-        const itemView = buildItemJudgeView(item);
-        const itemViewHash = sha256Hex(itemView);
-        const cacheKey = buildLabelCacheKey({
-          datasetId: options.context.datasetId,
-          queryHash: ranking.queryHash,
-          itemId: item.id,
-          itemViewHash,
-          judgeProfileHash
-        });
-        let label = labelsUsed.get(cacheKey) ?? labelCache.labels.get(cacheKey);
-        if (!label) {
-          label = await judgeRelevance({
+    const pendingLabels = buildPendingLabels({
+      rankings,
+      queries,
+      datasetId: options.context.datasetId,
+      judgeProfileHash,
+      labelsUsed,
+      cachedLabels: labelCache.labels
+    });
+    completedLabels = labelsUsed.size;
+    for (const batch of chunkArray(pendingLabels, llmConcurrency)) {
+      const results = await Promise.allSettled(
+        batch.map(pending =>
+          judgeRelevance({
             llmConfig: options.llmConfig,
             datasetId: options.context.datasetId,
-            query,
-            queryHash: ranking.queryHash,
-            itemView,
-            itemViewHash,
+            query: pending.query,
+            queryHash: pending.queryHash,
+            itemView: pending.itemView,
+            itemViewHash: pending.itemViewHash,
             judgeProfileHash,
-            cacheKey
-          });
-          await appendLabel(labelCache, label);
-        }
-        labelsUsed.set(label.cache_key, label);
+            cacheKey: pending.cacheKey
+          })
+        )
+      );
+      const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+      for (let index = 0; index < results.length; index += 1) {
+        const result = results[index];
+        if (result.status !== 'fulfilled') continue;
+        const pending = batch[index];
+        await appendLabel(labelCache, result.value);
+        labelsUsed.set(result.value.cache_key, result.value);
         completedLabels = labelsUsed.size;
         options.onProgress?.({
           phase: 'label',
-          message: `Label available for query ${ranking.queryId}, item ${item.id}.`,
+          message: `Label available for query ${pending.queryId}, item ${pending.itemId}.`,
           completed: completedLabels,
           total: totalPossibleLabels,
-          strategyId: ranking.strategyId,
-          queryId: ranking.queryId
+          strategyId: pending.strategyId,
+          queryId: pending.queryId
         });
       }
       await writeSearchCheckpoint({
@@ -223,9 +230,13 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
           totalSearches,
           completedLabels,
           totalPossibleLabels,
-          searchConcurrency
+          searchConcurrency,
+          llmConcurrency
         }
       });
+      if (failures.length > 0) {
+        throw failures[0].reason;
+      }
     }
   } catch (error) {
     await writeRunState(artifacts.runState, {
@@ -247,6 +258,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
       completedLabels,
       totalPossibleLabels,
       searchConcurrency,
+      llmConcurrency,
       error: error instanceof Error ? error.message : String(error),
       artifacts
     });
@@ -323,6 +335,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
     completedLabels,
     totalPossibleLabels,
     searchConcurrency,
+    llmConcurrency,
     recommendedStrategyId,
     artifacts
   });
@@ -391,6 +404,17 @@ interface PendingSearch {
   query: TuningQuery;
 }
 
+interface PendingLabel {
+  cacheKey: string;
+  strategyId: string;
+  queryId: string;
+  query: TuningQuery;
+  queryHash: string;
+  itemId: string;
+  itemView: ReturnType<typeof buildItemJudgeView>;
+  itemViewHash: string;
+}
+
 interface CheckpointStateBase {
   runId: string;
   generatedAt: string;
@@ -407,6 +431,7 @@ interface CheckpointStateBase {
   completedLabels: number;
   totalPossibleLabels: number;
   searchConcurrency: number;
+  llmConcurrency: number;
 }
 
 async function createNewRunSetup(
@@ -478,6 +503,51 @@ function buildPendingSearches(
   return pending;
 }
 
+function buildPendingLabels(input: {
+  rankings: TuningSearchRanking[];
+  queries: TuningQuery[];
+  datasetId: string;
+  judgeProfileHash: string;
+  labelsUsed: Map<string, JudgeLabel>;
+  cachedLabels: Map<string, JudgeLabel>;
+}): PendingLabel[] {
+  const queryById = new Map(input.queries.map(query => [query.id, query]));
+  const pendingByCacheKey = new Map<string, PendingLabel>();
+  for (const ranking of input.rankings) {
+    const query = queryById.get(ranking.queryId);
+    if (!query) continue;
+    for (const item of ranking.items) {
+      const itemView = buildItemJudgeView(item);
+      const itemViewHash = sha256Hex(itemView);
+      const cacheKey = buildLabelCacheKey({
+        datasetId: input.datasetId,
+        queryHash: ranking.queryHash,
+        itemId: item.id,
+        itemViewHash,
+        judgeProfileHash: input.judgeProfileHash
+      });
+      const existingLabel = input.labelsUsed.get(cacheKey) ?? input.cachedLabels.get(cacheKey);
+      if (existingLabel) {
+        input.labelsUsed.set(existingLabel.cache_key, existingLabel);
+        continue;
+      }
+      if (!pendingByCacheKey.has(cacheKey)) {
+        pendingByCacheKey.set(cacheKey, {
+          cacheKey,
+          strategyId: ranking.strategyId,
+          queryId: ranking.queryId,
+          query,
+          queryHash: ranking.queryHash,
+          itemId: item.id,
+          itemView,
+          itemViewHash
+        });
+      }
+    }
+  }
+  return [...pendingByCacheKey.values()];
+}
+
 async function writeSearchCheckpoint(input: {
   artifacts: Record<string, string>;
   strategies: TuningStrategy[];
@@ -507,6 +577,7 @@ async function writeSearchCheckpoint(input: {
     completedLabels: input.state.completedLabels,
     totalPossibleLabels: input.state.totalPossibleLabels,
     searchConcurrency: input.state.searchConcurrency,
+    llmConcurrency: input.state.llmConcurrency,
     artifacts: input.artifacts
   });
 }

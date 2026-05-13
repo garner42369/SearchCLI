@@ -1461,7 +1461,7 @@ COMMON FLAGS
         'vs search tune llm-check [--live] [service flags]',
         'vs search tune plan --application-id <id> [--dataset-id <id>] [--queries <file>] [--profile similarity-only] [service flags]',
         'vs search tune query-generate --application-id <id> [--dataset-id <id>] [--query-count <n>] [service flags]',
-        'vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--profile similarity-only] [--search-concurrency <n>] [service flags]',
+        'vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--profile similarity-only] [--search-concurrency <n>] [--llm-concurrency <n>] [service flags]',
         'vs search tune apply --application-id <id> --run-id <id> [--dry-run | --confirm-create-scene] [service flags]',
         'vs search tune report --run-id <id> [--output-dir <dir>] [service flags]'
       ]
@@ -1999,7 +1999,7 @@ EXAMPLES
     'tune:run': `Run first-version automated search evaluation and similarity tuning.
 
 USAGE
-  vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--profile similarity-only] [--search-concurrency <n>] [service flags]
+  vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--profile similarity-only] [--search-concurrency <n>] [--llm-concurrency <n>] [service flags]
 
 DESCRIPTION
   Runs text-query similarity tuning with CLI-managed LLM query generation and pointwise relevance judging.
@@ -2015,12 +2015,13 @@ KEY FLAGS
   --top-k           Results judged per query and strategy. Default: 20.
   --max-strategies  Maximum candidate strategies. Default: 30.
   --search-concurrency  Concurrent search requests. Default: 18.
+  --llm-concurrency     Concurrent LLM relevance judgements. Default: 100.
   --resume-run-id   Resume an incomplete run from its existing artifact directory.
   --output-dir      Artifact root. Default: .viking/search-tuning.
 
 EXAMPLES
   vs search tune run --application-id 123 --dataset-id 456 --profile similarity-only
-  vs search tune run --application-id 123 --dataset-id 456 --queries ./queries.jsonl --top-k 20 --max-strategies 30 --search-concurrency 18`,
+  vs search tune run --application-id 123 --dataset-id 456 --queries ./queries.jsonl --top-k 20 --max-strategies 30 --search-concurrency 18 --llm-concurrency 100`,
     'tune:apply': `Create a new search scene from a completed tuning report recommendation.
 
 USAGE
@@ -2553,6 +2554,7 @@ async function runSearchCli(argv: string[]): Promise<void> {
             topK: parseOptionalInt(optionalString(values['top-k'])),
             maxStrategies: parseOptionalInt(optionalString(values['max-strategies'])),
             searchConcurrency: parseOptionalInt(optionalString(values['search-concurrency'])),
+            llmConcurrency: parseOptionalInt(optionalString(values['llm-concurrency'])),
             outputDir: optionalString(values['output-dir']),
             resumeRunId: optionalString(values['resume-run-id'])
           });
@@ -2750,6 +2752,7 @@ function parseStandaloneOptions(argv: string[]) {
       'top-k': { type: 'string' },
       'max-strategies': { type: 'string' },
       'search-concurrency': { type: 'string' },
+      'llm-concurrency': { type: 'string' },
       'run-id': { type: 'string' },
       'resume-run-id': { type: 'string' },
       'scene-name': { type: 'string' },

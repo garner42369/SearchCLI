@@ -158,8 +158,8 @@ SearchCLI is an interactive AI search command-line tool. Below is the list of cu
     *   Usage: `vs search tune query-generate --application-id <id> [--dataset-id <id>] [--query-count <n>] [--output-dir <dir>] [service flags]`
     *   Description: generate a reusable synthetic JSONL query set from dataset samples with the configured CLI LLM
 *   `vs search tune run --application-id <id>`
-    *   Usage: `vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--profile similarity-only] [--query-count <n>] [--top-k <n>] [--max-strategies <n>] [--search-concurrency <n>] [--output-dir <dir>] [service flags]`
-    *   Description: run first-version text-query similarity evaluation and tuning with LLM query generation and pointwise relevance judging; search requests default to 18-way concurrency; writes `run-state.json`, `rankings.jsonl`, `labels-used.jsonl`, and `partial-metrics.json` during execution so interrupted runs can be resumed
+    *   Usage: `vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--profile similarity-only] [--query-count <n>] [--top-k <n>] [--max-strategies <n>] [--search-concurrency <n>] [--llm-concurrency <n>] [--output-dir <dir>] [service flags]`
+    *   Description: run first-version text-query similarity evaluation and tuning with LLM query generation and pointwise relevance judging; search requests default to 18-way concurrency and LLM judgements default to 100-way concurrency; writes `run-state.json`, `rankings.jsonl`, `labels-used.jsonl`, and `partial-metrics.json` during execution so interrupted runs can be resumed
 *   `vs search tune apply --application-id <id> --run-id <id>`
     *   Usage: `vs search tune apply --application-id <id> --run-id <id> [--scene-name <name>] [--scene-description <text>] [--dry-run | --confirm-create-scene] [--output-dir <dir>] [service flags]`
     *   Description: create a new search scene from a completed tuning report recommendation; request-only params such as `query_keyword_match_percent` are returned as `unappliedRequestParams`

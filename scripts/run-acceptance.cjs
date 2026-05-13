@@ -228,6 +228,8 @@ async function testSearchTuneRunHelp() {
   const { stdout } = await runCli(['search', 'tune', 'run', '--help']);
   assert.match(stdout, /--search-concurrency/);
   assert.match(stdout, /Default: 18/);
+  assert.match(stdout, /--llm-concurrency/);
+  assert.match(stdout, /Default: 100/);
   assert.doesNotMatch(stdout, /--scene-id/);
   assert.match(stdout, /--resume-run-id/);
   assert.match(stdout, /run-state\.json/);
