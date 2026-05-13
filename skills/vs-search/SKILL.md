@@ -32,7 +32,7 @@ If the user wants automated batch evaluation or similarity tuning across many qu
 
 ## Workflow
 
-1. Start with `search run` against an explicit `--scene-id`
+1. Start with `search run`
 2. If the first request succeeds, iterate on the query or scene as needed
 3. Before mutating a scene, inspect it first with `search scene list/get`
 4. When using `search scene update`, prefer the narrowest valid input:
@@ -71,7 +71,6 @@ If you set `Mode=UserDefined(4)`, you SHOULD also set `UserDefinedRecallMode` in
 
 ## Constraints
 
-- Normal runtime search checks should pass `--scene-id`; do not teach customers to call the scene-less runtime endpoint through `search run`
 - When an app is bound to exactly one dataset, the CLI can infer `dataset-id`
 - For fresh apps, treat readiness as the first hypothesis before blaming the query
 - Prefer public `vs search ...` commands over bypassing the CLI and calling lower-level APIs directly
