@@ -59,6 +59,7 @@ This first version is for text-query similarity only. It fixes `mode=UserDefined
 7. Run tuning only after the plan is acceptable:
    - with user queries: `vs search tune run --application-id <id> --dataset-id <dataset> --queries <file> --profile similarity-only`
    - with generated queries: use the `queryFile` returned by `query-generate`
+   Do not pass `--scene-id` for first-pass tuning unless the user explicitly asks to evaluate a specific existing scene. The tuning path uses request-level `search_dynamic` strategies directly.
 8. While a run is active, use the artifact paths from progress output if troubleshooting is needed:
    - `run-state.json`: current status, completed searches, labels, and resume metadata
    - `partial-metrics.json`: partial metrics from completed query/strategy pairs
@@ -86,6 +87,7 @@ This first version is for text-query similarity only. It fixes `mode=UserDefined
 - Do not run tuning before asking the user whether they have a query set.
 - Do not run tuning before `search tune plan` has been shown and summarized.
 - Do not let `search tune run` auto-generate queries during agent-led tuning. If the user has no query set, run `search tune query-generate`, show query samples, and then pass the generated `queryFile` to `plan` and `run`.
+- Do not add `--scene-id` to first-pass tuning runs unless the user explicitly asks for scene-specific evaluation.
 - Do not run tuning until `search tune llm-check` succeeds or the user provides a query/label path supported by a future workflow.
 - Do not present the recommendation as an online change. `search tune apply` creates a new candidate scene only; it does not switch the default entrance.
 - If a tuning process is interrupted, prefer `--resume-run-id` over starting a duplicate run with the same query set and strategy space.

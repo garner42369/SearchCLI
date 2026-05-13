@@ -109,11 +109,11 @@ SearchCLI is an interactive AI search command-line tool. Below is the list of cu
     *   Parameters: `[service flags]`
 
 ### `search` - Search Runtime and Scenes
-*   `vs search run --application-id <id> --query <text>`
-    *   Usage: `vs search run --application-id <id> [--scene-id <id>] [--dataset-id <id>] --query <text> [--page-size <n>] [service flags]`
-    *   Description: run a runtime search request against an application scene; `--dataset-id` is usually optional when the app is bound to exactly one dataset
+*   `vs search run --application-id <id> --scene-id <id> --query <text>`
+    *   Usage: `vs search run --application-id <id> --scene-id <id> [--dataset-id <id>] --query <text> [--page-size <n>] [service flags]`
+    *   Description: run a normal runtime search request against an explicit application scene; `--dataset-id` is usually optional when the app is bound to exactly one dataset
     *   Key flags: `--application-id`, `--scene-id`, `--dataset-id`, `--query`, `--page-size`
-    *   Examples: `vs search run --application-id 123 --query "wireless headphones"`; `vs search run --application-id 123 --scene-id default-search --query "running shoes" --page-size 5`
+    *   Examples: `vs search run --application-id 123 --scene-id default-search --query "wireless headphones"`; `vs search run --application-id 123 --scene-id default-search --query "running shoes" --page-size 5`
 *   `vs search scene create --application-id <id> --name <name>`
     *   Usage: `vs search scene create --application-id <id> --name <name> [--description <text>] [service flags]`
     *   Usage: `vs search scene create --application-id <id> --data @payload.json [service flags]`

@@ -54,7 +54,7 @@ QUICK START
     vs item apply --plan-dir ./.viking/item-plans/<plan> --confirm-review --wait-ready --run-trials
 
   Try one search request
-    vs search run --application-id <app> --query "wireless headphones"
+    vs search run --application-id <app> --scene-id <scene> --query "wireless headphones"
     if the app has multiple datasets, add --dataset-id <dataset>
 
   Run first-version search tuning

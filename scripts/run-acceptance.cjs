@@ -30,6 +30,7 @@ async function main() {
   await runTest('skill-list', testSkillList);
   await runTest('skill-show', testSkillShow);
   await runTest('search-tune-help', testSearchTuneHelp);
+  await runTest('search-run-requires-scene-help', testSearchRunRequiresSceneHelp);
   await runTest('search-tune-plan', testSearchTunePlan);
   await runTest('search-tune-apply-dry-run', testSearchTuneApplyDryRun);
   await runTest('search-tune-run-help', testSearchTuneRunHelp);
@@ -162,6 +163,15 @@ async function testSearchTuneHelp() {
   assert.match(stdout, /search tune apply/i);
   assert.match(stdout, /search tune report/i);
   return `${command.prefix} search --help`;
+}
+
+async function testSearchRunRequiresSceneHelp() {
+  const { stdout } = await runCli(['search', 'run', '--help']);
+  assert.match(stdout, /--scene-id <id>/);
+  assert.doesNotMatch(stdout, /\[--scene-id <id>\]/);
+  assert.doesNotMatch(stdout, /search run --application-id 123 --query/);
+  assert.match(stdout, /search run --application-id 123 --scene-id/);
+  return `${command.prefix} search run --help`;
 }
 
 async function testSearchTunePlan() {

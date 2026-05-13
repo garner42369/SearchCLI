@@ -1452,7 +1452,7 @@ COMMON FLAGS
     --base-url --ak --sk --region --timeout-ms --project-name --format --jq --output`,
     search: `${renderUsageBlock(
       [
-        'vs search run --application-id <id> [--scene-id <id>] [--dataset-id <id>] --query <text> [--page-size <n>] [service flags]',
+        'vs search run --application-id <id> --scene-id <id> [--dataset-id <id>] --query <text> [--page-size <n>] [service flags]',
         'vs search scene create --application-id <id> --name <name> [--description <text>] [service flags]',
         'vs search scene list --application-id <id> [service flags]',
         'vs search scene get --application-id <id> --scene-id <id> [service flags]',
@@ -1811,21 +1811,21 @@ function printSearchCommandHelp(action: string, subAction?: string): void {
     run: `Run a search request against an application scene.
 
 USAGE
-  vs search run --application-id <id> [--scene-id <id>] [--dataset-id <id>] --query <text> [--page-size <n>] [service flags]
+  vs search run --application-id <id> --scene-id <id> [--dataset-id <id>] --query <text> [--page-size <n>] [service flags]
 
 DESCRIPTION
-  Sends a runtime search request. When the application is bound to exactly one dataset, \`--dataset-id\`
-  is usually optional. Pass \`--scene-id\` to target a non-default search scene.
+  Sends a normal runtime search request against an explicit search scene. When the application is bound
+  to exactly one dataset, \`--dataset-id\` is usually optional.
 
 KEY FLAGS
   --application-id  Target application ID.
-  --scene-id        Optional search scene ID.
+  --scene-id        Search scene ID.
   --dataset-id      Optional dataset override for the request.
   --query           Search query text.
   --page-size       Optional result page size.
 
 EXAMPLES
-  vs search run --application-id 123 --query "wireless headphones"
+  vs search run --application-id 123 --scene-id default-search --query "wireless headphones"
   vs search run --application-id 123 --scene-id default-search --query "running shoes" --page-size 5`,
     'scene:create': `Create a search scene for an application.
 
@@ -2459,7 +2459,7 @@ async function runSearchCli(argv: string[]): Promise<void> {
       await runSearchRunCommand({
         ...serviceOptions,
         applicationId: requiredString(values['application-id'], '--application-id'),
-        sceneId: optionalString(values['scene-id']),
+        sceneId: requiredString(values['scene-id'], '--scene-id'),
         datasetId: optionalString(values['dataset-id']),
         query: optionalString(values.query),
         pageSize: parseOptionalInt(optionalString(values['page-size']))
