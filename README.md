@@ -76,6 +76,16 @@ Otherwise, run interactive login in a real terminal:
 vs auth login
 ```
 
+If you will use search tuning query generation or LLM relevance judging, configure an OpenAI-compatible LLM API without placing the API key in plain config:
+
+```bash
+vs llm login
+vs llm status --json
+vs search tune llm-check --live --json
+```
+
+If the current shell already has `VIKING_LLM_BASE_URL`, `VIKING_LLM_API_KEY`, and `VIKING_LLM_MODEL`, use `vs llm import-env` instead. The API key is stored in the local secure credential store; base URL and model are stored as non-secret config.
+
 ### 3. Run the First Onboarding Flow
 
 If the user wants a new app plus bind-time config review and runtime verification, use the `dataset+app` path:
@@ -168,6 +178,7 @@ vs auth login
 ```bash
 vs --help
 vs auth status --json
+vs llm status --json
 vs doctor --json
 vs skill list
 ```
@@ -175,6 +186,7 @@ vs skill list
 ## Public Command Groups
 
 - `vs auth`
+- `vs llm`
 - `vs doctor`
 - `vs skill`
 - `vs item`

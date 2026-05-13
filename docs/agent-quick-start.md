@@ -60,11 +60,58 @@ vs skill show --name vs-item-onboarding
 vs skill show --name vs-search-tuning
 ```
 
-## 4. Run The First Onboarding Flow
+## 4. Configure LLM For Search Tuning
+
+Search tuning query generation and LLM relevance judging need an OpenAI-compatible LLM API. Do not ask the user to paste the LLM API key into chat.
+
+Use this priority order:
+
+1. If the current real terminal already has `VIKING_LLM_BASE_URL`, `VIKING_LLM_API_KEY`, and `VIKING_LLM_MODEL`, run:
+
+```bash
+vs llm import-env
+```
+
+2. Otherwise, if the agent can keep an interactive real terminal alive, run:
+
+```bash
+vs llm login
+```
+
+3. Only if interactive login is not possible, ask the user to set environment variables in the current terminal and then run:
+
+```bash
+vs llm import-env
+```
+
+macOS / Linux:
+
+```bash
+export VIKING_LLM_BASE_URL=...
+export VIKING_LLM_API_KEY=...
+export VIKING_LLM_MODEL=...
+```
+
+Windows PowerShell:
+
+```powershell
+$env:VIKING_LLM_BASE_URL="..."
+$env:VIKING_LLM_API_KEY="..."
+$env:VIKING_LLM_MODEL="..."
+```
+
+Verify with:
+
+```bash
+vs llm status --json
+vs search tune llm-check --live --json
+```
+
+## 5. Run The First Onboarding Flow
 
 For structured item data, pick one provisioning boundary first:
 
-### 4.1 Dataset + App
+### 5.1 Dataset + App
 
 Use this path when the user wants app creation, bind-time field config review, or runtime verification:
 
@@ -77,7 +124,7 @@ vs item apply --plan-dir ./.viking/item-plans/<plan> --dry-run
 vs item apply --plan-dir ./.viking/item-plans/<plan> --confirm-review
 ```
 
-### 4.2 Dataset-Only
+### 5.2 Dataset-Only
 
 Use this path when the user only wants dataset creation / import / ingestion:
 
@@ -122,7 +169,7 @@ For video dataset-only provisioning, prefer `dataset-create.json` so the create 
 
 If the data looks like video content (for example `video_url`, `duration`, `content_type=video`, `parent_content_id`, or `sequence_index`) but the user did not explicitly say `item` or `video`, ask a clarifying question before planning or applying.
 
-## 5. Run Search Tuning
+## 6. Run Search Tuning
 
 When the user asks for search tuning, ask first whether they have a tuning query set. Use real online queries when available; otherwise tell the user the CLI can generate synthetic queries from dataset samples.
 

@@ -9,10 +9,14 @@ import { VikingOpenApiClient } from '../core/openapi-client';
 import { printOutput } from '../core/output-format';
 import { resolveServiceConfig, type ServiceConfigInput } from '../core/service-config';
 import {
+  deleteLlmApiCredentialsSync,
   deleteServiceCredentialsSync,
   getCredentialStoreStatus,
+  getLlmCredentialStoreStatus,
+  loadLlmApiCredentialsSync,
   loadServiceCredentialsSync,
   parseCredentialStoreMode,
+  saveLlmApiCredentialsSync,
   saveServiceCredentialsSync,
   type CredentialStoreMode
 } from '../core/credential-store';
@@ -55,6 +59,31 @@ export interface AuthImportEnvOptions extends PlatformServiceOptions {
 }
 
 export interface AuthLogoutOptions {
+  credentialStore?: CredentialStoreMode;
+  profile?: string;
+}
+
+export interface LlmLoginOptions extends PlatformServiceOptions {
+  credentialStore?: CredentialStoreMode;
+  noPrompt?: boolean;
+  profile?: string;
+  llmProvider?: string;
+  llmBaseUrl?: string;
+  llmApiKey?: string;
+  llmModel?: string;
+}
+
+export interface LlmStatusOptions extends PlatformServiceOptions {
+  credentialStore?: CredentialStoreMode;
+  profile?: string;
+}
+
+export interface LlmImportEnvOptions extends PlatformServiceOptions {
+  credentialStore?: CredentialStoreMode;
+  profile?: string;
+}
+
+export interface LlmLogoutOptions {
   credentialStore?: CredentialStoreMode;
   profile?: string;
 }
@@ -180,6 +209,183 @@ export async function runAuthImportEnvCommand(options: AuthImportEnvOptions): Pr
   });
 }
 
+export async function runLlmLoginCommand(options: LlmLoginOptions): Promise<void> {
+  const existingConfig = await loadCliConfig();
+  const defaults = resolveCliDefaults({
+    timeoutMs: options.timeoutMs,
+    credentialStore: options.credentialStore,
+    activeProfile: options.profile,
+    llmBaseUrl: options.llmBaseUrl,
+    llmApiKey: options.llmApiKey,
+    llmModel: options.llmModel
+  });
+  const selectedProfile = resolveActiveCliProfile(existingConfig, options.profile ?? defaults.activeProfile);
+  const provider = parseLlmProvider(options.llmProvider ?? process.env.VIKING_LLM_PROVIDER ?? defaults.llmProvider ?? 'openai-compatible');
+  const interactive = !options.noPrompt && Boolean(process.stdin.isTTY && process.stdout.isTTY);
+  const baseUrl =
+    options.llmBaseUrl ??
+    optionalEnv('VIKING_LLM_BASE_URL') ??
+    defaults.llmBaseUrl ??
+    (interactive ? await promptText('LLM Base URL: ') : undefined);
+  const model =
+    options.llmModel ??
+    optionalEnv('VIKING_LLM_MODEL') ??
+    defaults.llmModel ??
+    (interactive ? await promptText('LLM Model: ') : undefined);
+  const apiKey =
+    options.llmApiKey ??
+    optionalEnv('VIKING_LLM_API_KEY') ??
+    (interactive ? await promptHidden('LLM API Key: ') : undefined);
+
+  if (!baseUrl || !model || !apiKey) {
+    throw new Error(missingLlmCredentialGuidance(interactive));
+  }
+
+  const persisted = await persistLlmCredentials({
+    existingConfig,
+    defaults,
+    selectedProfile,
+    provider,
+    baseUrl,
+    model,
+    apiKey,
+    credentialStore: options.credentialStore
+  });
+
+  await printJson({
+    ok: true,
+    profile: selectedProfile,
+    provider,
+    apiKey: maskCredential(apiKey),
+    apiKeySource: 'secure-store',
+    baseUrl,
+    model,
+    credentialStore: {
+      savedBackend: persisted.savedBackend,
+      ...getLlmCredentialStoreStatus(persisted.selectedStore, selectedProfile)
+    },
+    configPath: persisted.configPath,
+    nextSteps: [
+      'Run `vs llm status` and `vs search tune llm-check --live` to verify the LLM path.',
+      'Do not paste the LLM API key into chat; use `vs llm login` or VIKING_LLM_API_KEY in a real terminal.'
+    ]
+  });
+}
+
+export async function runLlmImportEnvCommand(options: LlmImportEnvOptions): Promise<void> {
+  const baseUrl = optionalEnv('VIKING_LLM_BASE_URL');
+  const apiKey = optionalEnv('VIKING_LLM_API_KEY');
+  const model = optionalEnv('VIKING_LLM_MODEL');
+  const provider = parseLlmProvider(process.env.VIKING_LLM_PROVIDER ?? 'openai-compatible');
+  if (!baseUrl || !apiKey || !model) {
+    throw new Error(
+      'Missing VIKING_LLM_BASE_URL/VIKING_LLM_API_KEY/VIKING_LLM_MODEL in the current shell. Set them first, then run `vs llm import-env`.'
+    );
+  }
+
+  const existingConfig = await loadCliConfig();
+  const defaults = resolveCliDefaults({
+    timeoutMs: options.timeoutMs,
+    credentialStore: options.credentialStore,
+    activeProfile: options.profile,
+    llmBaseUrl: baseUrl,
+    llmApiKey: apiKey,
+    llmModel: model
+  });
+  const selectedProfile = resolveActiveCliProfile(existingConfig, options.profile ?? defaults.activeProfile);
+  const persisted = await persistLlmCredentials({
+    existingConfig,
+    defaults,
+    selectedProfile,
+    provider,
+    baseUrl,
+    model,
+    apiKey,
+    credentialStore: options.credentialStore
+  });
+
+  await printJson({
+    ok: true,
+    profile: selectedProfile,
+    provider,
+    importedFrom: 'env',
+    importedKeys: ['VIKING_LLM_BASE_URL', 'VIKING_LLM_API_KEY', 'VIKING_LLM_MODEL'],
+    apiKey: maskCredential(apiKey),
+    apiKeySource: 'secure-store',
+    baseUrl,
+    model,
+    credentialStore: {
+      savedBackend: persisted.savedBackend,
+      ...getLlmCredentialStoreStatus(persisted.selectedStore, selectedProfile)
+    },
+    configPath: persisted.configPath,
+    nextSteps: [
+      'Unset VIKING_LLM_API_KEY after import if you do not want the secret to stay in the shell.',
+      'Run `vs llm status` and `vs search tune llm-check --live` to verify the LLM path.'
+    ]
+  });
+}
+
+export async function runLlmStatusCommand(options: LlmStatusOptions = {}): Promise<void> {
+  const currentConfig = await loadCliConfig();
+  const defaults = resolveCliDefaults({
+    timeoutMs: options.timeoutMs,
+    credentialStore: options.credentialStore,
+    activeProfile: options.profile
+  });
+  let secureStore: ReturnType<typeof loadLlmApiCredentialsSync> = { backend: defaults.resolvedCredentialStoreMode };
+  let secureStoreError: string | undefined;
+  try {
+    secureStore = loadLlmApiCredentialsSync(defaults.credentialStore, defaults.activeProfile);
+  } catch (error) {
+    secureStoreError = error instanceof Error ? error.message : String(error);
+  }
+  const envApiKeyConfigured = Boolean(optionalEnv('VIKING_LLM_API_KEY'));
+  const legacyConfigApiKeyConfigured = Boolean(currentConfig.llmApiKey);
+  const apiKeySource = envApiKeyConfigured
+    ? 'env'
+    : secureStore.credentials
+      ? 'secure-store'
+      : legacyConfigApiKeyConfigured
+        ? 'config'
+        : 'none';
+  const credentialStatus = getLlmCredentialStoreStatus(defaults.credentialStore, defaults.activeProfile);
+
+  await printJson({
+    configured: Boolean(defaults.llmBaseUrl && defaults.llmModel && defaults.llmApiKey),
+    activeProfile: defaults.activeProfile,
+    provider: defaults.llmProvider ?? secureStore.credentials?.provider ?? 'openai-compatible',
+    baseUrl: defaults.llmBaseUrl ?? null,
+    model: defaults.llmModel ?? null,
+    apiKeyConfigured: Boolean(defaults.llmApiKey),
+    apiKeySource,
+    credentialStore: {
+      ...credentialStatus,
+      resolvedMode: secureStore.backend ?? credentialStatus.resolvedMode,
+      secureStoreConfigured: Boolean(secureStore.credentials),
+      error: secureStoreError
+    },
+    configPath: resolveCliConfigPath(),
+    warnings: legacyConfigApiKeyConfigured
+      ? ['llm-api-key is present in config.json. Prefer `vs llm login` or `vs llm import-env` so the API key is stored in the secure credential store.']
+      : []
+  });
+}
+
+export async function runLlmLogoutCommand(options: LlmLogoutOptions): Promise<void> {
+  const defaults = resolveCliDefaults({
+    credentialStore: options.credentialStore,
+    activeProfile: options.profile
+  });
+  const result = deleteLlmApiCredentialsSync(defaults.credentialStore, defaults.activeProfile);
+  await printJson({
+    ok: true,
+    profile: defaults.activeProfile,
+    deleted: result.deleted,
+    backends: result.backends
+  });
+}
+
 export async function runAuthStatusCommand(options: AuthStatusOptions = {}): Promise<void> {
   const currentConfig = await loadCliConfig();
   const defaults = resolveCliDefaults({
@@ -296,6 +502,11 @@ export async function runDoctorCommand(): Promise<void> {
   const config = await loadCliConfig();
   const resolved = resolveCliDefaults();
   const credentialStatus = getCredentialStoreStatus(resolved.credentialStore);
+  const llmConfigured = Boolean(
+    resolved.llmBaseUrl &&
+    resolved.llmModel &&
+    ((resolved.llmAccessKeyId && resolved.llmSecretKey) || resolved.llmApiKey)
+  );
   const checks = [
     {
       name: 'config_file',
@@ -312,8 +523,8 @@ export async function runDoctorCommand(): Promise<void> {
     },
     {
       name: 'llm',
-      ok: Boolean((resolved.llmAccessKeyId && resolved.llmSecretKey) || resolved.llmApiKey),
-      detail: resolved.llmModel ?? 'LLM not configured'
+      ok: llmConfigured,
+      detail: llmConfigured ? `${resolved.llmModel} via ${resolved.llmProvider ?? 'openai-compatible'}` : 'LLM not configured; run `vs llm login` or `vs llm import-env`'
     },
     {
       name: 'git',
@@ -386,6 +597,9 @@ export async function runPlatformDomainFromArgv(domain: string, argv: string[]):
     case 'auth':
       await runAuthCli(argv);
       return true;
+    case 'llm':
+      await runLlmCli(argv);
+      return true;
     case 'doctor':
       await runDoctorCli(argv);
       return true;
@@ -397,6 +611,7 @@ export async function runPlatformDomainFromArgv(domain: string, argv: string[]):
 export function printPlatformDomainsHelp(): void {
   const publicLines = [
     'vs auth login|import-env|status|logout|list|use',
+    'vs llm login|import-env|status|logout',
     'vs doctor'
   ];
   console.log(['PLATFORM COMMANDS', renderUsageBlock(publicLines)].join('\n'));
@@ -412,6 +627,14 @@ function printDomainHelp(domain: string): void {
         'vs auth logout [--profile <name>] [--store auto|keychain|file|ephemeral] [--format <format>]',
         'vs auth list [--format <format>]',
         'vs auth use <profile> [--format <format>]'
+      ]
+    ),
+    llm: renderUsageBlock(
+      [
+        'vs llm login [--provider openai-compatible] [--base-url <url>] [--model <model>] [--api-key <key>] [--profile <name>] [--store auto|keychain|file|ephemeral] [--no-prompt] [--format <format>]',
+        'vs llm import-env [--profile <name>] [--store auto|keychain|file|ephemeral] [--format <format>]',
+        'vs llm status [--profile <name>] [--format <format>]',
+        'vs llm logout [--profile <name>] [--store auto|keychain|file|ephemeral] [--format <format>]'
       ]
     ),
     doctor: `USAGE
@@ -462,6 +685,35 @@ async function runAuthCli(argv: string[]): Promise<void> {
   }
 }
 
+async function runLlmCli(argv: string[]): Promise<void> {
+  const action = argv[0];
+  if (isDomainHelpRequest(argv)) {
+    printDomainHelp('llm');
+    return;
+  }
+  switch (action) {
+    case 'login':
+      await runLlmLoginCommand(parseStandaloneLlmOptions(argv.slice(1)));
+      return;
+    case 'import-env':
+      await runLlmImportEnvCommand(parseStandaloneLlmOptions(argv.slice(1)));
+      return;
+    case 'status':
+      await runLlmStatusCommand(parseStandaloneLlmOptions(argv.slice(1)));
+      return;
+    case 'logout': {
+      const options = parseStandaloneLlmOptions(argv.slice(1));
+      await runLlmLogoutCommand({
+        credentialStore: options.credentialStore,
+        profile: options.profile
+      });
+      return;
+    }
+    default:
+      throw new Error(`Unknown llm subcommand: ${action}`);
+  }
+}
+
 async function runDoctorCli(argv: string[]): Promise<void> {
   if (hasHelpFlag(argv)) {
     printDomainHelp('doctor');
@@ -508,6 +760,43 @@ function parseStandaloneAuthOptions(argv: string[]): AuthLoginOptions & { positi
   };
 }
 
+function parseStandaloneLlmOptions(argv: string[]): LlmLoginOptions & { positionals: string[] } {
+  const { values, positionals } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    strict: false,
+    options: {
+      format: { type: 'string' },
+      json: { type: 'boolean' },
+      table: { type: 'boolean' },
+      yaml: { type: 'boolean' },
+      pretty: { type: 'boolean' },
+      ndjson: { type: 'boolean' },
+      csv: { type: 'boolean' },
+      jq: { type: 'string', short: 'q' },
+      output: { type: 'string', short: 'o' },
+      provider: { type: 'string' },
+      'base-url': { type: 'string' },
+      model: { type: 'string' },
+      'api-key': { type: 'string' },
+      store: { type: 'string' },
+      profile: { type: 'string' },
+      'no-prompt': { type: 'boolean' }
+    }
+  });
+
+  return {
+    positionals,
+    llmProvider: optionalString(values.provider),
+    llmBaseUrl: optionalString(values['base-url']),
+    llmModel: optionalString(values.model),
+    llmApiKey: optionalString(values['api-key']),
+    profile: optionalString(values.profile),
+    credentialStore: optionalString(values.store) ? parseCredentialStoreMode(String(values.store)) : undefined,
+    noPrompt: Boolean(values['no-prompt'])
+  };
+}
+
 function commandExists(command: string): boolean {
   const checker = process.platform === 'win32' ? 'where' : 'which';
   const result = spawnSync(checker, [command], {
@@ -526,6 +815,27 @@ function requiredPositional(positionals: string[], index: number, label: string)
 
 function optionalString(value: string | boolean | undefined): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function optionalEnv(name: string): string | undefined {
+  const value = process.env[name];
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function parseLlmProvider(value: string): 'openai-compatible' {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'openai-compatible') return 'openai-compatible';
+  throw new Error(`Unsupported LLM provider: ${value}. First version supports only openai-compatible.`);
+}
+
+function missingLlmCredentialGuidance(interactive: boolean): string {
+  const envGuidance = 'Set VIKING_LLM_BASE_URL, VIKING_LLM_API_KEY, and VIKING_LLM_MODEL in this shell, then run `vs llm import-env`.';
+  if (interactive) {
+    return `Missing LLM Base URL, model, or API key. Continue with \`vs llm login\`, pass --base-url/--model/--api-key, or ${envGuidance}`;
+  }
+  return `Missing LLM Base URL, model, or API key. The current terminal is not interactive. ${envGuidance}`;
 }
 
 async function persistAuthCredentials(options: {
@@ -579,6 +889,50 @@ async function persistAuthCredentials(options: {
     baseUrl: options.baseUrl ?? options.defaults.baseUrl,
     projectName: options.projectName ?? options.defaults.projectName,
     region: options.region ?? options.defaults.region
+  };
+}
+
+async function persistLlmCredentials(options: {
+  existingConfig: VikingCliConfig;
+  defaults: ResolvedCliDefaults;
+  selectedProfile: string;
+  provider: 'openai-compatible';
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+  credentialStore?: CredentialStoreMode;
+}): Promise<{
+  selectedStore: CredentialStoreMode;
+  savedBackend: ReturnType<typeof saveLlmApiCredentialsSync>;
+  configPath: string;
+}> {
+  const selectedStore = parseCredentialStoreMode(options.credentialStore ?? options.defaults.credentialStore);
+  const savedBackend = saveLlmApiCredentialsSync(
+    {
+      provider: options.provider,
+      apiKey: options.apiKey,
+      updatedAt: new Date().toISOString()
+    },
+    selectedStore,
+    options.selectedProfile
+  );
+
+  let nextConfig = setActiveCliProfile(options.existingConfig, options.selectedProfile);
+  nextConfig = setCliConfigValue(nextConfig, 'llm-provider', options.provider);
+  nextConfig = setCliConfigValue(nextConfig, 'llm-base-url', options.baseUrl);
+  nextConfig = setCliConfigValue(nextConfig, 'llm-model', options.model);
+  if (options.existingConfig.credentialStore !== selectedStore) {
+    nextConfig = setCliConfigValue(nextConfig, 'credentials-store', selectedStore);
+  }
+  if ('llmApiKey' in nextConfig) {
+    nextConfig = unsetCliConfigValue(nextConfig, 'llm-api-key');
+  }
+
+  const configPath = await saveCliConfig(nextConfig);
+  return {
+    selectedStore,
+    savedBackend,
+    configPath
   };
 }
 

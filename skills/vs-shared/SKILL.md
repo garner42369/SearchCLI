@@ -4,8 +4,8 @@ description: "Shared SearchCLI setup: install, authenticate, run doctor, and ver
 category: shared
 applies_to: codex, agents, external-agent
 requires_cli: ">=0.1.0"
-keywords: install cli, auth import-env, auth login, doctor, first-time setup, profile switch, shared basics
-commands: auth import-env, auth login, auth status, auth use, auth list, doctor, skill list, skill install, app status, app diagnose, search run, chat run
+keywords: install cli, auth import-env, auth login, llm login, doctor, first-time setup, profile switch, shared basics
+commands: auth import-env, auth login, auth status, auth use, auth list, llm login, llm import-env, llm status, llm logout, doctor, skill list, skill install, app status, app diagnose, search run, chat run
 ---
 
 # Viking Shared
@@ -26,6 +26,10 @@ Use this skill when an external agent is setting up SearchCLI for the first time
 - `auth status`: inspect the active profile, credential source, and region
 - `auth use`: switch profiles
 - `auth list`: list saved profiles
+- `llm login`: capture OpenAI-compatible LLM base URL, model, and API key interactively; stores the API key in the local secure store
+- `llm import-env`: import `VIKING_LLM_BASE_URL` / `VIKING_LLM_API_KEY` / `VIKING_LLM_MODEL` into config plus secure store
+- `llm status`: inspect the active LLM provider, model, base URL, and secret source without revealing the API key
+- `llm logout`: delete the stored LLM API key for a profile
 - `doctor`: check local dependencies, auth, and configuration
 - `skill list`: inspect the published Viking skills
 - `skill install`: install Viking skills from the local repository checkout
@@ -50,6 +54,18 @@ Built-in region checklist (for `--region` and auth profiles):
 7. Repository maintainers can use `skill install all` or install named skills from the local checkout
 8. Before deeper debugging, use `app status` or `search/chat run` for a minimal runtime check
 
+## LLM Setup
+
+Search tuning query generation and LLM relevance judging need an OpenAI-compatible LLM API. Do not ask the user to paste an LLM API key into chat.
+
+Use this priority order:
+
+1. If the current real terminal already has `VIKING_LLM_BASE_URL`, `VIKING_LLM_API_KEY`, and `VIKING_LLM_MODEL`, run `vs llm import-env`.
+2. Otherwise, if the agent can keep an interactive real terminal alive, run `vs llm login` and wait for the user to enter the API key in that terminal.
+3. If interactive login is not possible, tell the user to set `VIKING_LLM_BASE_URL`, `VIKING_LLM_API_KEY`, and `VIKING_LLM_MODEL` in the current terminal, then run `vs llm import-env`.
+
+The first version supports only the `openai-compatible` protocol. Non-secret LLM metadata is written to `~/.viking/config.json`; the API key is stored through the local secure credential store.
+
 ## Customer Environment Principle
 
 - In customer environments, assume repository source code is unavailable.
@@ -61,4 +77,5 @@ Built-in region checklist (for `--region` and auth profiles):
 ## Constraints
 
 - If the user has already placed credentials in the current shell, prefer `auth import-env` and do not ask them to paste secrets into chat
+- If LLM credentials are needed, prefer `llm import-env` or `llm login`; do not ask the user to paste LLM API keys into chat
 - Before installing or distributing a skill, confirm that the current CLI version satisfies `requires_cli`

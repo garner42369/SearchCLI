@@ -18,6 +18,19 @@ SearchCLI is an interactive AI search command-line tool. Below is the list of cu
 *   `vs auth use <profile>`
     *   Parameters: `[--format <format>]`
 
+### `llm` - OpenAI-Compatible LLM Credential Management
+*   `vs llm login`
+    *   Parameters: `[--provider openai-compatible] [--base-url <url>] [--model <model>] [--api-key <key>] [--profile <name>] [--store auto|keychain|file|ephemeral] [--no-prompt] [--format <format>]`
+    *   Description: store an OpenAI-compatible LLM API key in the local secure credential store; prefer the interactive prompt or environment variables over `--api-key`
+*   `vs llm import-env`
+    *   Parameters: `[--profile <name>] [--store auto|keychain|file|ephemeral] [--format <format>]`
+    *   Description: import `VIKING_LLM_BASE_URL`, `VIKING_LLM_API_KEY`, and `VIKING_LLM_MODEL`; the API key goes to the secure store and non-secret metadata goes to config
+*   `vs llm status`
+    *   Parameters: `[--profile <name>] [--store auto|keychain|file|ephemeral] [--format <format>]`
+    *   Description: inspect LLM base URL, model, provider, and secret source without revealing the API key
+*   `vs llm logout`
+    *   Parameters: `[--profile <name>] [--store auto|keychain|file|ephemeral] [--format <format>]`
+
 ### `doctor` - Environment Check
 *   `vs doctor`
     *   Parameters: `[--format <format>] [--jq <selector>] [--output <path>]`
@@ -150,7 +163,7 @@ SearchCLI is an interactive AI search command-line tool. Below is the list of cu
     *   Examples: `vs search scene delete --application-id 123 --scene-id abc`; `vs search scene delete --application-id 123 --scene-id abc --format json`; `vs search scene delete --application-id 123 --scene-id abc --data @payload.json`
 *   `vs search tune llm-check`
     *   Usage: `vs search tune llm-check [--live] [service flags]`
-    *   Description: check whether CLI-managed LLM configuration is available for automated search tuning
+    *   Description: check whether CLI-managed LLM configuration is available for automated search tuning; if unavailable, configure with `vs llm login` or `vs llm import-env`
 *   `vs search tune plan --application-id <id>`
     *   Usage: `vs search tune plan --application-id <id> [--dataset-id <id>] [--queries <file>] [--profile similarity-only] [--query-count <n>] [--top-k <n>] [--max-strategies <n>] [service flags]`
     *   Description: plan first-version text-query similarity evaluation without calling search or LLM services; prints query source, request/label estimate, fixed `mode=UserDefined`, tuned parameter list, strategy coverage, source-item coverage, warnings, and a suggested smaller first-pass shape
