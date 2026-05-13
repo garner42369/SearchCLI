@@ -199,11 +199,15 @@ export function isAuthManagedCliConfigKey(key: CliConfigKey): boolean {
 
 export function resolveCliDefaults(input: Partial<ResolvedCliDefaults> = {}, customPath?: string): ResolvedCliDefaults {
   const stored = loadCliConfigSync(customPath);
-  const activeProfile = resolveActiveCliProfile(stored, input.activeProfile ?? process.env.VIKING_PROFILE);
+  const envProfile = optionalEnvString(process.env.VIKING_PROFILE);
+  const envCredentialStore = optionalEnvString(process.env.VIKING_CREDENTIALS_STORE);
+  const envAk = optionalEnvString(process.env.VIKING_AK);
+  const envSk = optionalEnvString(process.env.VIKING_SK);
+  const envLlmAk = optionalEnvString(process.env.VIKING_LLM_AK);
+  const envLlmApiKey = optionalEnvString(process.env.VIKING_LLM_API_KEY);
+  const activeProfile = resolveActiveCliProfile(stored, input.activeProfile ?? envProfile);
   const profileConfig = getCliProfile(stored, activeProfile) ?? {};
-  const credentialStore = resolveCredentialStoreMode(
-    input.credentialStore ?? process.env.VIKING_CREDENTIALS_STORE ?? profileConfig.credentialStore ?? stored.credentialStore
-  );
+  const credentialStore = resolveCredentialStoreMode(input.credentialStore ?? envCredentialStore ?? profileConfig.credentialStore ?? stored.credentialStore);
   const credentialStatus = getCredentialStoreStatus(credentialStore);
   let credentialLookup: ReturnType<typeof loadServiceCredentialsSync> = {
     backend: credentialStatus.resolvedMode
@@ -214,12 +218,12 @@ export function resolveCliDefaults(input: Partial<ResolvedCliDefaults> = {}, cus
   } catch (error) {
     credentialLoadError = error as Error;
   }
-  const llmAccessKeyId = input.llmAccessKeyId ?? process.env.VIKING_LLM_AK ?? stored.llmAccessKeyId;
-  const llmApiKey = input.llmApiKey ?? process.env.VIKING_LLM_API_KEY ?? stored.llmApiKey;
+  const llmAccessKeyId = input.llmAccessKeyId ?? envLlmAk ?? stored.llmAccessKeyId;
+  const llmApiKey = input.llmApiKey ?? envLlmApiKey ?? stored.llmApiKey;
   const authSource: ResolvedCliDefaults['authSource'] =
     input.accessKeyId || input.secretKey
       ? 'flag'
-      : process.env.VIKING_AK || process.env.VIKING_SK
+      : envAk || envSk
         ? 'env'
         : credentialLookup.credentials
           ? 'secure-store'
@@ -229,29 +233,29 @@ export function resolveCliDefaults(input: Partial<ResolvedCliDefaults> = {}, cus
     credentialLoadError &&
     !input.accessKeyId &&
     !input.secretKey &&
-    !process.env.VIKING_AK &&
-    !process.env.VIKING_SK
+    !envAk &&
+    !envSk
   ) {
     throw credentialLoadError;
   }
 
   return {
     activeProfile,
-    baseUrl: input.baseUrl ?? process.env.VIKING_BASE_URL ?? profileConfig.baseUrl ?? stored.baseUrl ?? DEFAULT_BASE_URL,
+    baseUrl: input.baseUrl ?? optionalEnvString(process.env.VIKING_BASE_URL) ?? profileConfig.baseUrl ?? stored.baseUrl ?? DEFAULT_BASE_URL,
     service: input.service ?? stored.service ?? DEFAULT_SERVICE,
     accessKeyId:
       input.accessKeyId ??
-      process.env.VIKING_AK ??
+      envAk ??
       credentialLookup.credentials?.accessKeyId,
     secretKey:
       input.secretKey ??
-      process.env.VIKING_SK ??
+      envSk ??
       credentialLookup.credentials?.secretKey,
     credentialStore,
     resolvedCredentialStoreMode: credentialLookup.backend ?? credentialStatus.resolvedMode,
     authSource,
-    projectName: input.projectName ?? process.env.VIKING_PROJECT_NAME ?? profileConfig.projectName ?? stored.projectName ?? DEFAULT_PROJECT_NAME,
-    region: input.region ?? process.env.VIKING_REGION ?? profileConfig.region ?? stored.region ?? DEFAULT_REGION,
+    projectName: input.projectName ?? optionalEnvString(process.env.VIKING_PROJECT_NAME) ?? profileConfig.projectName ?? stored.projectName ?? DEFAULT_PROJECT_NAME,
+    region: input.region ?? optionalEnvString(process.env.VIKING_REGION) ?? profileConfig.region ?? stored.region ?? DEFAULT_REGION,
     timeoutMs:
       input.timeoutMs ??
       optionalNumber(process.env.VIKING_TIMEOUT_MS) ??
@@ -259,19 +263,19 @@ export function resolveCliDefaults(input: Partial<ResolvedCliDefaults> = {}, cus
       stored.timeoutMs ??
       DEFAULT_TIMEOUT_MS,
     defaultPageSize: input.defaultPageSize ?? optionalNumber(process.env.VIKING_PAGE_SIZE) ?? stored.defaultPageSize ?? DEFAULT_PAGE_SIZE,
-    outputDir: input.outputDir ?? process.env.VIKING_OUTPUT_DIR ?? stored.outputDir ?? DEFAULT_OUTPUT_DIR,
-    sessionDir: input.sessionDir ?? process.env.VIKING_SESSION_DIR ?? stored.sessionDir ?? DEFAULT_SESSION_DIR,
+    outputDir: input.outputDir ?? optionalEnvString(process.env.VIKING_OUTPUT_DIR) ?? stored.outputDir ?? DEFAULT_OUTPUT_DIR,
+    sessionDir: input.sessionDir ?? optionalEnvString(process.env.VIKING_SESSION_DIR) ?? stored.sessionDir ?? DEFAULT_SESSION_DIR,
     llmBaseUrl:
       input.llmBaseUrl ??
-      process.env.VIKING_LLM_BASE_URL ??
+      optionalEnvString(process.env.VIKING_LLM_BASE_URL) ??
       stored.llmBaseUrl ??
       (llmAccessKeyId || llmApiKey ? DEFAULT_LLM_BASE_URL : undefined),
     llmApiKey,
     llmAccessKeyId,
-    llmSecretKey: input.llmSecretKey ?? process.env.VIKING_LLM_SK ?? stored.llmSecretKey,
-    llmRegion: input.llmRegion ?? process.env.VIKING_LLM_REGION ?? stored.llmRegion ?? DEFAULT_LLM_REGION,
-    llmService: input.llmService ?? process.env.VIKING_LLM_SERVICE ?? stored.llmService ?? DEFAULT_LLM_SERVICE,
-    llmModel: input.llmModel ?? process.env.VIKING_LLM_MODEL ?? stored.llmModel,
+    llmSecretKey: input.llmSecretKey ?? optionalEnvString(process.env.VIKING_LLM_SK) ?? stored.llmSecretKey,
+    llmRegion: input.llmRegion ?? optionalEnvString(process.env.VIKING_LLM_REGION) ?? stored.llmRegion ?? DEFAULT_LLM_REGION,
+    llmService: input.llmService ?? optionalEnvString(process.env.VIKING_LLM_SERVICE) ?? stored.llmService ?? DEFAULT_LLM_SERVICE,
+    llmModel: input.llmModel ?? optionalEnvString(process.env.VIKING_LLM_MODEL) ?? stored.llmModel,
     maxCases: input.maxCases ?? optionalNumber(process.env.VIKING_MAX_CASES) ?? stored.maxCases
   };
 }
@@ -372,6 +376,12 @@ function optionalNumber(rawValue: string | undefined): number | undefined {
   if (!rawValue) return undefined;
   const parsed = Number.parseInt(rawValue, 10);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function optionalEnvString(rawValue: string | undefined): string | undefined {
+  if (rawValue === undefined) return undefined;
+  const trimmed = rawValue.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function maskSecret(value: string): string {

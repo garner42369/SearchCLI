@@ -21,15 +21,16 @@ This first version is for text-query similarity only. It fixes `mode=UserDefined
 - an `application-id` is available
 - a `dataset-id` is preferred; if omitted, the CLI can try to infer a unique search dataset from the application
 - Viking auth is configured with `vs auth status`
-- LLM config is available to the CLI through `VIKING_LLM_BASE_URL`, `VIKING_LLM_API_KEY` or `VIKING_LLM_AK/SK`, and `VIKING_LLM_MODEL`
+- LLM config is available to the CLI through `VIKING_LLM_BASE_URL`, `VIKING_LLM_API_KEY` or `VIKING_LLM_AK/SK`, and `VIKING_LLM_MODEL` when generating queries or using LLM relevance labels
+- a query file with `sourceItemIds` can be evaluated with `--label-source source-item` for a fast first-pass silver-label run without LLM relevance judging
 - the user understands that LLM relevance labels are silver labels and should be reviewed before high-risk production changes
 
 ## Commands
 
 - `search tune llm-check`: verify CLI-managed LLM configuration
 - `search tune query-generate`: generate a reusable synthetic query set from paged dataset samples with batched concurrent LLM calls when the user has no query set
-- `search tune plan`: show query source, candidate strategies, estimated requests/labels, and parameter coverage before running
-- `search tune run`: generate or load queries, run candidate search strategies, label top results, compute metrics, and write artifacts; use `--resume-run-id <run-id>` to continue an interrupted run
+- `search tune plan`: show query source, candidate strategies, estimated requests/labels, parameter coverage, source-item coverage, warnings, and suggested first-pass size before running
+- `search tune run`: generate or load queries, run candidate search strategies, label top results, compute metrics, and write artifacts; supports `--label-source llm|source-item|auto`, `--llm-retries`, `--max-label-failure-rate`, and `--verbose`; use `--resume-run-id <run-id>` to continue an interrupted run
 - `search tune report`: read a previous tuning report
 - `search tune apply`: create a new candidate search scene from a completed tuning report recommendation
 - `app status` / `doctor`: verify app and local environment readiness
@@ -55,16 +56,17 @@ This first version is for text-query similarity only. It fixes `mode=UserDefined
 6. Run a plan before any expensive evaluation:
    - with user queries: `vs search tune plan --application-id <id> --dataset-id <dataset> --queries <file> --profile similarity-only --json`
    - with generated queries: use the `queryFile` returned by `query-generate`
-   Summarize the estimated search requests, max pointwise LLM judgements, and parameter coverage.
+   Summarize the estimated search requests, max pointwise LLM judgements, source-item coverage, suggested first-pass size, warnings, and parameter coverage.
 7. Run tuning only after the plan is acceptable:
-   - with user queries: `vs search tune run --application-id <id> --dataset-id <dataset> --queries <file> --profile similarity-only --search-concurrency 18 --llm-concurrency 100 --timeout-ms 120000`
+   - fast first pass when the query file has enough `sourceItemIds`: `vs search tune run --application-id <id> --dataset-id <dataset> --queries <file> --profile similarity-only --label-source source-item --search-concurrency 18 --timeout-ms 120000 --json`
+   - LLM judgement run: `vs search tune run --application-id <id> --dataset-id <dataset> --queries <file> --profile similarity-only --label-source llm --search-concurrency 18 --llm-concurrency 100 --llm-retries 1 --max-label-failure-rate 0.01 --timeout-ms 120000`
    - with generated queries: use the `queryFile` returned by `query-generate`
    Use the command form above for first-pass tuning unless the user explicitly asks for a different evaluation scope. Search requests default to 18-way concurrency, and LLM judgements default to 100-way concurrency. LLM judging runs as a worker pool, so completed labels are checkpointed while slower LLM requests continue in their own worker slots.
 8. While a run is active, use the artifact paths from progress output if troubleshooting is needed:
    - `run-state.json`: current status, completed searches, labels, and resume metadata
    - `partial-metrics.json`: partial metrics from completed query/strategy pairs
-   - `performance-summary.json`: elapsed time, search/LLM wall time, average latency, throughput, cache hits, and configured concurrency
-   - `rankings.jsonl` and `labels-used.jsonl`: completed rankings and labels used by the run
+   - `performance-summary.json`: elapsed time, search/LLM wall time, average and percentile latency, throughput, cache hits, label failures, and configured concurrency
+   - `rankings.jsonl`, `labels-used.jsonl`, and `label-failures.jsonl`: completed rankings, labels used by the run, and tolerated/diagnostic label failures
    If the process is interrupted, resume with `vs search tune run --application-id <id> --resume-run-id <run-id>`.
 9. Read and summarize the generated report:
    - `vs search tune report --run-id <run-id> --json`
@@ -89,11 +91,11 @@ This first version is for text-query similarity only. It fixes `mode=UserDefined
 - Do not run tuning before `search tune plan` has been shown and summarized.
 - Do not let `search tune run` auto-generate queries during agent-led tuning. If the user has no query set, run `search tune query-generate`, show query samples, and then pass the generated `queryFile` to `plan` and `run`.
 - Do not continue from a generated query set when `query-generate` returns `ok=false`; inspect `warnings` and retry generation before asking the user.
-- Do not run tuning until `search tune llm-check` succeeds or the user provides a query/label path supported by a future workflow.
+- Do not run LLM query generation or LLM judging until `search tune llm-check` succeeds. A `--label-source source-item` run may skip LLM judging only when the query file already contains usable `sourceItemIds`.
 - Do not present the recommendation as an online change. `search tune apply` creates a new candidate scene only; it does not switch the default entrance.
 - If a tuning process is interrupted, prefer `--resume-run-id` over starting a duplicate run with the same query set and strategy space.
 - Do not tune or attribute changes to rerank, personalization, hotness, boost/bury, sort rules, serving controls, or business rules in this first-version workflow.
 - Do not create, update, publish, or switch search scenes as a fallback for failed automatic tuning. Only use `search tune apply` after a completed report and explicit user approval.
-- Do not call a result "optimal" or "best" unless a completed `search tune run` report exists. Without a report, call it manual candidate validation or a tool failure diagnosis.
+- Do not call a result "optimal" or "best" unless a completed `search tune run` report exists. If the report used `--label-source source-item`, call it a fast source-item silver-label recommendation and explain that LLM or human labels can be used for higher-confidence validation.
 - Do not delete or prune `.viking/search-tuning` artifacts unless the user explicitly asks.
 - If `search tune run` generates queries automatically, tell the user the query set is synthetic and should be reviewed for high-risk usage.

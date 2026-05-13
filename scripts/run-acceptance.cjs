@@ -35,6 +35,8 @@ async function main() {
   await runTest('search-tune-plan', testSearchTunePlan);
   await runTest('search-tune-query-generate-mock', testSearchTuneQueryGenerateMock);
   await runTest('search-tune-run-worker-pool-mock', testSearchTuneRunWorkerPoolMock);
+  await runTest('search-tune-run-source-item-mock', testSearchTuneRunSourceItemMock);
+  await runTest('search-tune-run-label-failure-threshold-mock', testSearchTuneRunLabelFailureThresholdMock);
   await runTest('search-tune-apply-dry-run', testSearchTuneApplyDryRun);
   await runTest('search-tune-run-help', testSearchTuneRunHelp);
   await runTest('app-list-help', testAppListHelp);
@@ -184,7 +186,7 @@ async function testSearchTunePlan() {
     queriesPath,
     [
       JSON.stringify({ id: 'q1', text: '对象存储' }),
-      JSON.stringify({ id: 'q2', text: 'ECS API' }),
+      JSON.stringify({ id: 'q2', text: 'ECS API', sourceItemIds: ['ecs-api-doc'] }),
       JSON.stringify({ id: 'q3', query: { text: '如何创建云服务器实例' } })
     ].join('\n')
   );
@@ -214,6 +216,11 @@ async function testSearchTunePlan() {
   assert.equal(payload.estimated.strategyCount, 8);
   assert.equal(payload.estimated.searchRequests, 16);
   assert.equal(payload.estimated.maxPointwiseJudgements, 80);
+  assert.equal(payload.estimated.sourceItemQueryCount, 1);
+  assert.equal(payload.estimated.sourceItemQueryCoverage, 0.5);
+  assert.equal(payload.suggestedFirstPass.queryCount, 2);
+  assert.equal(payload.suggestedFirstPass.strategyCount, 8);
+  assert.equal(payload.suggestedFirstPass.topK, 5);
   assert.deepEqual(payload.fixed.mode, 'UserDefined');
   assert.ok(payload.tunedParameters.includes('user_defined_recall_mode'));
   assert.ok(payload.tunedParameters.includes('dense_weight'));
@@ -235,6 +242,10 @@ async function testSearchTuneRunHelp() {
   assert.match(stdout, /Default: 100/);
   assert.doesNotMatch(stdout, /--scene-id/);
   assert.match(stdout, /--resume-run-id/);
+  assert.match(stdout, /--label-source/);
+  assert.match(stdout, /--llm-retries/);
+  assert.match(stdout, /--max-label-failure-rate/);
+  assert.match(stdout, /--verbose/);
   assert.match(stdout, /run-state\.json/);
   assert.match(stdout, /partial-metrics\.json/);
   assert.match(stdout, /performance-summary\.json/);
@@ -374,12 +385,169 @@ async function testSearchTuneRunWorkerPoolMock() {
     assert.equal(serverState.llmRequests, 6);
     assert.equal(payload.performance.labelRequestsCompleted, 6);
     assert.equal(payload.performance.labelCacheMisses, 6);
+    assert.equal(payload.performance.labelRequestsFailed, 0);
+    assert.ok(payload.performance.llmLatencyP50Ms >= 0);
+    assert.ok(payload.performance.llmLatencyP95Ms >= payload.performance.llmLatencyP50Ms);
     assert.ok(payload.performance.llmWallMs < 900, `expected worker-pool LLM wall < 900ms, got ${payload.performance.llmWallMs}`);
     assert.ok(wallMs < 2000, `expected tune run wall < 2000ms, got ${wallMs}`);
     const state = JSON.parse(fs.readFileSync(payload.runState, 'utf8'));
     assert.equal(state.status, 'completed');
     assert.match(fs.readFileSync(payload.report, 'utf8'), /Recommended strategy/i);
     return `${command.prefix} search tune run --application-id app-1 --dataset-id ds-1 --queries ${queriesPath} --json`;
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+}
+
+async function testSearchTuneRunSourceItemMock() {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'viking-acceptance-tune-source-item-'));
+  const queriesPath = path.join(workspace, 'queries.jsonl');
+  fs.writeFileSync(
+    queriesPath,
+    [
+      JSON.stringify({
+        id: 'q1',
+        text: 'training shirt',
+        intent: 'Find a training shirt',
+        sourceItemIds: ['training-shirt-item-1']
+      }),
+      JSON.stringify({
+        id: 'q2',
+        text: 'golf polo',
+        intent: 'Find a golf polo',
+        sourceItemIds: ['golf-polo-item-1']
+      })
+    ].join('\n')
+  );
+  const serverState = {
+    searchRequests: 0,
+    llmRequests: 0
+  };
+  const server = await startTuneRunWorkerPoolMockServer(serverState);
+  try {
+    const { stdout, stderr } = await runCli(
+      [
+        'search',
+        'tune',
+        'run',
+        '--application-id',
+        'app-1',
+        '--dataset-id',
+        'ds-1',
+        '--queries',
+        queriesPath,
+        '--query-count',
+        '2',
+        '--top-k',
+        '3',
+        '--max-strategies',
+        '1',
+        '--label-source',
+        'source-item',
+        '--output-dir',
+        workspace,
+        '--base-url',
+        server.baseUrl,
+        '--ak',
+        'ak',
+        '--sk',
+        'sk',
+        '--json'
+      ],
+      {
+        env: {
+          VIKING_LLM_BASE_URL: '',
+          VIKING_LLM_API_KEY: '',
+          VIKING_LLM_MODEL: ''
+        }
+      }
+    );
+    const payload = JSON.parse(stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.labelSource, 'source-item');
+    assert.equal(payload.labelFailureCount, 0);
+    assert.equal(serverState.searchRequests, 2);
+    assert.equal(serverState.llmRequests, 0);
+    assert.equal(payload.performance.labelRequestsCompleted, 0);
+    assert.equal(payload.labelCount, 6);
+    assert.doesNotMatch(stderr, /Label available for query/);
+    const recommendation = JSON.parse(fs.readFileSync(payload.recommendation, 'utf8'));
+    assert.equal(recommendation.metrics.averageMrrAt10, 1);
+    return `${command.prefix} search tune run --application-id app-1 --dataset-id ds-1 --queries ${queriesPath} --label-source source-item --json`;
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+}
+
+async function testSearchTuneRunLabelFailureThresholdMock() {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'viking-acceptance-tune-label-failure-'));
+  const queriesPath = path.join(workspace, 'queries.jsonl');
+  fs.writeFileSync(
+    queriesPath,
+    [
+      JSON.stringify({ id: 'q1', text: 'training shirt', intent: 'Find a training shirt' }),
+      JSON.stringify({ id: 'q2', text: 'golf polo', intent: 'Find a golf polo' })
+    ].join('\n')
+  );
+  const serverState = {
+    searchRequests: 0,
+    llmRequests: 0,
+    failLlmRequestNumbers: new Set([2])
+  };
+  const server = await startTuneRunWorkerPoolMockServer(serverState);
+  try {
+    const { stdout } = await runCli(
+      [
+        'search',
+        'tune',
+        'run',
+        '--application-id',
+        'app-1',
+        '--dataset-id',
+        'ds-1',
+        '--queries',
+        queriesPath,
+        '--query-count',
+        '2',
+        '--top-k',
+        '3',
+        '--max-strategies',
+        '1',
+        '--llm-concurrency',
+        '3',
+        '--llm-retries',
+        '0',
+        '--max-label-failure-rate',
+        '0.5',
+        '--timeout-ms',
+        '5000',
+        '--output-dir',
+        workspace,
+        '--base-url',
+        server.baseUrl,
+        '--ak',
+        'ak',
+        '--sk',
+        'sk',
+        '--json'
+      ],
+      {
+        env: {
+          VIKING_LLM_BASE_URL: server.baseUrl,
+          VIKING_LLM_API_KEY: 'llm-key',
+          VIKING_LLM_MODEL: 'mock-model'
+        }
+      }
+    );
+    const payload = JSON.parse(stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.labelSource, 'llm');
+    assert.equal(payload.labelFailureCount, 1);
+    assert.equal(payload.performance.labelRequestsFailed, 1);
+    assert.equal(payload.performance.labelRequestsCompleted, 5);
+    const failures = fs.readFileSync(payload.labelFailures, 'utf8').trim().split('\n').filter(Boolean);
+    assert.equal(failures.length, 1);
+    return `${command.prefix} search tune run --application-id app-1 --dataset-id ds-1 --queries ${queriesPath} --max-label-failure-rate 0.5 --json`;
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
@@ -423,6 +591,11 @@ async function startTuneRunWorkerPoolMockServer(state) {
       }
       if (req.url.endsWith('/chat/completions')) {
         state.llmRequests += 1;
+        if (state.failLlmRequestNumbers?.has(state.llmRequests)) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: 'mock LLM failure' }));
+          return;
+        }
         const delayMs = state.llmRequests === 1 || state.llmRequests === 4 ? 500 : 20;
         setTimeout(() => {
           res.end(

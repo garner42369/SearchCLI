@@ -17,9 +17,13 @@ export function renderTuningMarkdownReport(report: TuningRunReportShape): string
   if (report.sceneId) lines.push(`- Scene ID: \`${report.sceneId}\``);
   lines.push(`- Profile: \`${report.profile}\``);
   lines.push(`- Query Source: \`${report.querySource}\``);
+  lines.push(`- Label Source: \`${report.labelSource}\``);
   lines.push(`- Queries: ${report.queryCount}`);
   lines.push(`- Strategies: ${report.strategyCount}`);
   lines.push(`- Labels Used: ${report.labelCount}`);
+  if (report.labelFailureCount > 0) {
+    lines.push(`- Label Failures: ${report.labelFailureCount}`);
+  }
   lines.push('');
 
   if (report.performance) {
@@ -27,9 +31,15 @@ export function renderTuningMarkdownReport(report: TuningRunReportShape): string
     lines.push('');
     lines.push(`- Total elapsed: ${formatDuration(report.performance.totalElapsedMs)}`);
     lines.push(`- Setup: ${formatDuration(report.performance.setupMs)}`);
-    lines.push(`- Search wall time: ${formatDuration(report.performance.searchWallMs)} (${formatMetric(report.performance.searchRequestsPerSecond)} req/s, avg latency ${formatDuration(report.performance.averageSearchLatencyMs)}, concurrency ${report.performance.searchConcurrency})`);
-    lines.push(`- LLM wall time: ${formatDuration(report.performance.llmWallMs)} (${formatMetric(report.performance.llmRequestsPerSecond)} req/s, avg latency ${formatDuration(report.performance.averageLlmLatencyMs)}, concurrency ${report.performance.llmConcurrency})`);
-    lines.push(`- LLM labels: ${report.performance.labelRequestsCompleted} judged, ${report.performance.labelCacheHits} cache hits, ${report.performance.labelCacheMisses} cache misses`);
+    lines.push(
+      `- Search wall time: ${formatDuration(report.performance.searchWallMs)} (${formatMetric(report.performance.searchRequestsPerSecond)} req/s, avg latency ${formatDuration(report.performance.averageSearchLatencyMs)}, p95 ${formatDuration(report.performance.searchLatencyP95Ms)}, concurrency ${report.performance.searchConcurrency})`
+    );
+    lines.push(
+      `- LLM wall time: ${formatDuration(report.performance.llmWallMs)} (${formatMetric(report.performance.llmRequestsPerSecond)} req/s, avg latency ${formatDuration(report.performance.averageLlmLatencyMs)}, p95 ${formatDuration(report.performance.llmLatencyP95Ms)}, concurrency ${report.performance.llmConcurrency})`
+    );
+    lines.push(
+      `- Labels: ${report.performance.labelRequestsCompleted} judged, ${report.performance.labelRequestsFailed} failed, ${report.performance.labelCacheHits} cache hits, ${report.performance.labelCacheMisses} cache misses, failure rate ${formatMetric(report.performance.labelFailureRate)}`
+    );
     lines.push(`- Metrics/write: ${formatDuration(report.performance.metricsMs)} / ${formatDuration(report.performance.writeMs)}`);
     lines.push('');
   }
@@ -89,7 +99,11 @@ export function renderTuningMarkdownReport(report: TuningRunReportShape): string
   lines.push('');
   lines.push('- This first version evaluates text-query similarity only.');
   lines.push('- Rerank, personalization, hotness, boost/bury rules, and business operating rules are intentionally out of scope.');
-  lines.push('- LLM labels are silver labels and should be reviewed before high-risk production changes.');
+  if (report.labelSource === 'source-item') {
+    lines.push('- Source-item labels are fast silver labels derived from query `sourceItemIds`; use LLM or human labels for higher-confidence validation.');
+  } else {
+    lines.push('- LLM labels are silver labels and should be reviewed before high-risk production changes.');
+  }
   lines.push('');
 
   return `${lines.join('\n')}\n`;

@@ -3,6 +3,9 @@
 
 import type { SearchDynamic, SearchResultItem } from '../types';
 
+export type TuningLabelSource = 'llm' | 'source-item' | 'auto';
+export type EffectiveTuningLabelSource = 'llm' | 'source-item';
+
 export interface TuningQuery {
   id: string;
   text: string;
@@ -45,7 +48,18 @@ export interface TuningPlanShape {
     topK: number;
     searchRequests: number;
     maxPointwiseJudgements: number;
+    sourceItemQueryCount: number;
+    sourceItemQueryCoverage: number;
   };
+  suggestedFirstPass: {
+    queryCount: number;
+    strategyCount: number;
+    topK: number;
+    searchRequests: number;
+    maxPointwiseJudgements: number;
+    reason: string;
+  };
+  warnings: string[];
   coverage: TuningStrategyCoverage;
   strategies: TuningStrategy[];
 }
@@ -115,10 +129,20 @@ export interface TuningPerformanceSummary {
   writeMs: number;
   searchRequestsCompleted: number;
   labelRequestsCompleted: number;
+  labelRequestsFailed: number;
   labelCacheHits: number;
   labelCacheMisses: number;
   averageSearchLatencyMs: number;
   averageLlmLatencyMs: number;
+  searchLatencyP50Ms: number;
+  searchLatencyP90Ms: number;
+  searchLatencyP95Ms: number;
+  searchLatencyP99Ms: number;
+  llmLatencyP50Ms: number;
+  llmLatencyP90Ms: number;
+  llmLatencyP95Ms: number;
+  llmLatencyP99Ms: number;
+  labelFailureRate: number;
   searchRequestsPerSecond: number;
   llmRequestsPerSecond: number;
   searchConcurrency: number;
@@ -133,10 +157,12 @@ export interface TuningRunReportShape {
   sceneId?: string;
   profile: 'similarity-only';
   querySource: 'user-provided' | 'generated';
+  labelSource: EffectiveTuningLabelSource;
   topK: number;
   queryCount: number;
   strategyCount: number;
   labelCount: number;
+  labelFailureCount: number;
   recommendedStrategyId?: string;
   strategyCoverage: TuningStrategyCoverage;
   strategies: TuningStrategy[];
@@ -155,10 +181,12 @@ export interface TuningRunStateShape {
   sceneId?: string;
   profile: 'similarity-only';
   querySource: 'user-provided' | 'generated';
+  labelSource: EffectiveTuningLabelSource;
   topK: number;
   queryCount: number;
   strategyCount: number;
   labelCount: number;
+  labelFailureCount: number;
   completedSearches: number;
   totalSearches: number;
   completedLabels: number;

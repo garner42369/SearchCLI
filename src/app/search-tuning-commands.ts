@@ -14,6 +14,7 @@ import { inspectTuningContext } from '../core/search-tuning/inspect';
 import { loadTuningReport, loadTuningRunState, runSearchTuning, type TuningProgressEvent } from '../core/search-tuning/runner';
 import { generateTuningQueries, generateTuningQuerySet } from '../core/search-tuning/query-generator';
 import { stableStringify } from '../core/search-tuning/hash';
+import type { TuningLabelSource } from '../core/search-tuning/types';
 
 export interface SearchTuneServiceOptions extends ServiceConfigInput {
   data?: string;
@@ -29,6 +30,10 @@ export interface SearchTuneRunOptions extends SearchTuneServiceOptions {
   maxStrategies?: number;
   searchConcurrency?: number;
   llmConcurrency?: number;
+  labelSource?: TuningLabelSource;
+  llmRetries?: number;
+  maxLabelFailureRate?: number;
+  verbose?: boolean;
   outputDir?: string;
   profile?: string;
   resumeRunId?: string;
@@ -111,13 +116,21 @@ export async function runSearchTuneRunCommand(options: SearchTuneRunOptions): Pr
   }
 
   const effectiveTimeoutMs = options.timeoutMs ?? 120000;
-  const llmConfig = resolveLlmClientConfig({
-    timeoutMs: effectiveTimeoutMs
-  });
-  if (!llmConfig) {
+  const effectiveLabelSource = options.labelSource ?? 'llm';
+  const needsLlmBeforeRun = !options.queries || effectiveLabelSource === 'llm';
+  const llmConfig = needsLlmBeforeRun
+    ? (resolveLlmClientConfig({
+        timeoutMs: effectiveTimeoutMs
+      }) ?? undefined)
+    : undefined;
+  if (!llmConfig && needsLlmBeforeRun) {
     throw new Error(
       'LLM is not configured. Run `vs search tune llm-check` for details, then set VIKING_LLM_BASE_URL, VIKING_LLM_API_KEY, and VIKING_LLM_MODEL.'
     );
+  }
+  const maxLabelFailureRate = options.maxLabelFailureRate ?? 0.01;
+  if (!Number.isFinite(maxLabelFailureRate) || maxLabelFailureRate < 0 || maxLabelFailureRate > 1) {
+    throw new Error('--max-label-failure-rate must be a number between 0 and 1.');
   }
 
   const serviceConfig = resolveServiceConfig({
@@ -162,9 +175,12 @@ export async function runSearchTuneRunCommand(options: SearchTuneRunOptions): Pr
     maxStrategies: effectiveMaxStrategies,
     searchConcurrency: effectiveSearchConcurrency,
     llmConcurrency: effectiveLlmConcurrency,
+    labelSource: effectiveLabelSource,
+    llmRetries: options.llmRetries ?? 1,
+    maxLabelFailureRate,
     outputDir: options.outputDir,
     resumeRunId: options.resumeRunId,
-    onProgress: writeProgressEvent
+    onProgress: createProgressWriter(Boolean(options.verbose))
   });
 
   await printOutput({
@@ -181,6 +197,10 @@ export async function runSearchTuneRunCommand(options: SearchTuneRunOptions): Pr
     partialMetrics: report.artifacts.partialMetrics,
     rankings: report.artifacts.rankings,
     labelsUsed: report.artifacts.labelsUsed,
+    labelFailures: report.artifacts.labelFailures,
+    labelSource: report.labelSource,
+    labelCount: report.labelCount,
+    labelFailureCount: report.labelFailureCount,
     recommendedStrategyId: report.recommendedStrategyId
   });
 }
@@ -357,10 +377,13 @@ function defaultMinQueryCount(queryCount: number): number {
   return Math.min(queryCount, Math.max(10, Math.ceil(queryCount * 0.8)));
 }
 
-function writeProgressEvent(event: TuningProgressEvent): void {
-  const progress =
-    event.total && event.total > 0 && event.completed !== undefined ? ` [${event.completed}/${event.total}]` : '';
-  process.stderr.write(`[search-tune:${event.phase}]${progress} ${event.message}\n`);
+function createProgressWriter(verbose: boolean): (event: TuningProgressEvent) => void {
+  return event => {
+    if (event.detail && !verbose) return;
+    const progress =
+      event.total && event.total > 0 && event.completed !== undefined ? ` [${event.completed}/${event.total}]` : '';
+    process.stderr.write(`[search-tune:${event.phase}]${progress} ${event.message}\n`);
+  };
 }
 
 function extractSceneId(response: unknown): string | undefined {

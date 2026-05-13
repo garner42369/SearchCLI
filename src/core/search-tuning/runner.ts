@@ -16,7 +16,9 @@ import { generateSimilarityOnlyStrategies, summarizeStrategyCoverage } from './s
 import { sha256Hex, stableStringify } from './hash';
 import type {
   JudgeLabel,
+  EffectiveTuningLabelSource,
   TuningPerformanceSummary,
+  TuningLabelSource,
   TuningQuery,
   TuningRunReportShape,
   TuningRunStateShape,
@@ -33,18 +35,22 @@ export interface TuningProgressEvent {
   total?: number;
   strategyId?: string;
   queryId?: string;
+  detail?: boolean;
 }
 
 export interface RunSearchTuningOptions {
   runtimeConfig: RuntimeConfig;
   context: TuningContext;
-  llmConfig: LlmClientConfig;
+  llmConfig?: LlmClientConfig;
   queriesFile?: string;
   queryCount: number;
   topK: number;
   maxStrategies: number;
   searchConcurrency: number;
   llmConcurrency: number;
+  labelSource: TuningLabelSource;
+  llmRetries: number;
+  maxLabelFailureRate: number;
   outputDir?: string;
   resumeRunId?: string;
   onProgress?: (event: TuningProgressEvent) => void;
@@ -61,11 +67,16 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
   const cachePath = path.join(rootDir, 'cache', 'labels.jsonl');
   const client = new VikingSearchClient(options.runtimeConfig);
   const labelCache = await loadLabelCache(cachePath);
-  const judgeProfileHash = buildJudgeProfileHash(options.llmConfig);
   const setup = options.resumeRunId
     ? await loadExistingRunSetup(artifacts)
     : await createNewRunSetup({ ...options, runId, generatedAt, artifacts });
   const { queries, strategies, querySource, strategyCoverage } = setup;
+  const labelSource = resolveEffectiveLabelSource(options.labelSource, queries);
+  if (labelSource === 'llm' && !options.llmConfig) {
+    throw new Error('LLM is required for --label-source llm. Configure LLM or use --label-source source-item with sourceItemIds queries.');
+  }
+  const judgeProfileHash =
+    labelSource === 'source-item' ? buildSourceItemJudgeProfileHash() : buildJudgeProfileHash(options.llmConfig as LlmClientConfig);
   const rankings = options.resumeRunId ? await loadExistingRankings(artifacts.rankings) : [];
   const labelsUsed = options.resumeRunId ? await loadExistingLabels(artifacts.labelsUsed) : new Map<string, JudgeLabel>();
   const completedRankingKeys = new Set(rankings.map(ranking => buildRankingKey(ranking.strategyId, ranking.queryId)));
@@ -79,11 +90,15 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
   let metricsMs = 0;
   let writeMs = 0;
   let searchLatencySumMs = 0;
+  const searchLatenciesMs: number[] = [];
   let searchRequestsCompletedForTiming = 0;
   let llmLatencySumMs = 0;
+  const llmLatenciesMs: number[] = [];
   let labelRequestsCompleted = 0;
+  let labelRequestsFailed = 0;
   let labelCacheHits = 0;
   let labelCacheMisses = 0;
+  let labelFailureCount = 0;
   let completedSearches = completedRankingKeys.size;
   let completedLabels = labelsUsed.size;
   const currentPerformance = (endedAt?: string): TuningPerformanceSummary =>
@@ -98,8 +113,11 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
       writeMs,
       searchRequestsCompleted: searchRequestsCompletedForTiming,
       searchLatencySumMs,
+      searchLatenciesMs,
       labelRequestsCompleted,
+      labelRequestsFailed,
       llmLatencySumMs,
+      llmLatenciesMs,
       labelCacheHits,
       labelCacheMisses,
       searchConcurrency,
@@ -123,6 +141,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
     sceneId: options.context.sceneId,
     profile: 'similarity-only',
     querySource,
+    labelSource,
     topK: options.topK,
     queryCount: queries.length,
     strategyCount: strategies.length,
@@ -130,6 +149,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
     completedSearches,
     totalSearches,
     completedLabels,
+    labelFailureCount,
     totalPossibleLabels,
     searchConcurrency,
     llmConcurrency,
@@ -151,7 +171,8 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
             completed: completedSearches,
             total: totalSearches,
             strategyId: strategy.id,
-            queryId: query.id
+            queryId: query.id,
+            detail: true
           });
           const startedAt = Date.now();
           const response = await client.search(
@@ -192,6 +213,11 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
       }
       searchRequestsCompletedForTiming += batchCompletedSearches;
       searchLatencySumMs += batchLatencySumMs;
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          searchLatenciesMs.push(result.value.latencyMs);
+        }
+      }
       options.onProgress?.({
         phase: 'query',
         message: `Search batch completed: ${batchCompletedSearches}/${batch.length} requests in ${formatDuration(batchWallMs)}; avg latency=${formatDuration(safeAverage(batchLatencySumMs, batchCompletedSearches))}; throughput=${formatRate(batchCompletedSearches, batchWallMs)} req/s.`,
@@ -210,6 +236,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
           datasetId: options.context.datasetId,
           sceneId: options.context.sceneId,
           querySource,
+          labelSource,
           topK: options.topK,
           queryCount: queries.length,
           strategyCount: strategies.length,
@@ -217,6 +244,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
           completedSearches,
           totalSearches,
           completedLabels,
+          labelFailureCount,
           totalPossibleLabels,
           searchConcurrency,
           llmConcurrency,
@@ -228,66 +256,99 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
       }
     }
 
-    const labelPlan = buildPendingLabels({
-      rankings,
-      queries,
-      datasetId: options.context.datasetId,
-      judgeProfileHash,
-      labelsUsed,
-      cachedLabels: labelCache.labels
-    });
-    const pendingLabels = labelPlan.pendingLabels;
-    labelCacheHits += labelPlan.cacheHits;
-    labelCacheMisses += pendingLabels.length;
-    completedLabels = labelsUsed.size;
-    const labelProgressTotal = labelsUsed.size + pendingLabels.length;
-    options.onProgress?.({
-      phase: 'label',
-      message: `LLM label plan: ${labelProgressTotal} unique labels (${labelCacheHits} cache hits, ${pendingLabels.length} misses) from up to ${totalPossibleLabels} pointwise judgements.`,
-      completed: completedLabels,
-      total: labelProgressTotal
-    });
-    const labelStartedAt = Date.now();
-    const labelFailures = await runLabelWorkers({
-      pendingLabels,
-      llmConcurrency,
-      judgeProfileHash,
-      datasetId: options.context.datasetId,
-      llmConfig: options.llmConfig,
-      artifacts,
-      strategies,
-      rankings,
-      labelsUsed,
-      labelCache,
-      state: {
-        runId,
-        generatedAt: setup.generatedAt,
-        applicationId: options.context.applicationId,
+    let labelFailures: LabelWorkerFailure[] = [];
+    let labelProgressTotal = labelsUsed.size;
+    if (labelSource === 'source-item') {
+      const result = await materializeSourceItemLabels({
+        rankings,
+        queries,
         datasetId: options.context.datasetId,
-        sceneId: options.context.sceneId,
-        querySource,
-        topK: options.topK,
-        queryCount: queries.length,
-        strategyCount: strategies.length,
-        labelCount: labelsUsed.size,
-        completedSearches,
-        totalSearches,
-        completedLabels,
-        totalPossibleLabels,
-        searchConcurrency,
+        judgeProfileHash,
+        labelsUsed,
+        labelCache,
+        cachedLabels: labelCache.labels
+      });
+      labelCacheHits += result.cacheHits;
+      labelCacheMisses += result.createdLabels;
+      completedLabels = labelsUsed.size;
+      labelProgressTotal = completedLabels;
+      options.onProgress?.({
+        phase: 'label',
+        message: `Source-item label plan: ${completedLabels} unique labels (${labelCacheHits} cache hits, ${result.createdLabels} created) from query sourceItemIds.`,
+        completed: completedLabels,
+        total: labelProgressTotal
+      });
+    } else {
+      const labelPlan = buildPendingLabels({
+        rankings,
+        queries,
+        datasetId: options.context.datasetId,
+        judgeProfileHash,
+        labelsUsed,
+        cachedLabels: labelCache.labels
+      });
+      const pendingLabels = labelPlan.pendingLabels;
+      labelCacheHits += labelPlan.cacheHits;
+      labelCacheMisses += pendingLabels.length;
+      completedLabels = labelsUsed.size;
+      labelProgressTotal = labelsUsed.size + pendingLabels.length;
+      options.onProgress?.({
+        phase: 'label',
+        message: `LLM label plan: ${labelProgressTotal} unique labels (${labelCacheHits} cache hits, ${pendingLabels.length} misses) from up to ${totalPossibleLabels} pointwise judgements.`,
+        completed: completedLabels,
+        total: labelProgressTotal
+      });
+      const labelStartedAt = Date.now();
+      labelFailures = await runLabelWorkers({
+        pendingLabels,
         llmConcurrency,
-        performance: currentPerformance()
-      },
-      progressTotal: labelProgressTotal,
-      progress: options.onProgress,
-      currentPerformance,
-      onLabel: result => {
-        completedLabels = labelsUsed.size;
-        labelRequestsCompleted += 1;
-        llmLatencySumMs += result.latencyMs;
-      }
-    });
-    llmWallMs += Date.now() - labelStartedAt;
+        judgeProfileHash,
+        datasetId: options.context.datasetId,
+        llmConfig: options.llmConfig as LlmClientConfig,
+        maxRetries: Math.max(0, Math.floor(options.llmRetries)),
+        artifacts,
+        strategies,
+        rankings,
+        labelsUsed,
+        labelCache,
+        state: {
+          runId,
+          generatedAt: setup.generatedAt,
+          applicationId: options.context.applicationId,
+          datasetId: options.context.datasetId,
+          sceneId: options.context.sceneId,
+          querySource,
+          labelSource,
+          topK: options.topK,
+          queryCount: queries.length,
+          strategyCount: strategies.length,
+          labelCount: labelsUsed.size,
+          completedSearches,
+          totalSearches,
+          completedLabels,
+          labelFailureCount,
+          totalPossibleLabels,
+          searchConcurrency,
+          llmConcurrency,
+          performance: currentPerformance()
+        },
+        progressTotal: labelProgressTotal,
+        progress: options.onProgress,
+        currentPerformance,
+        onLabel: result => {
+          completedLabels = labelsUsed.size;
+          labelRequestsCompleted += 1;
+          llmLatencySumMs += result.latencyMs;
+          llmLatenciesMs.push(result.latencyMs);
+        },
+        onFailure: () => {
+          labelRequestsFailed += 1;
+        }
+      });
+      llmWallMs += Date.now() - labelStartedAt;
+    }
+    labelFailureCount = labelFailures.length;
+    await writeText(artifacts.labelFailures, toJsonl(labelFailures.map(serializeLabelFailure)));
     await writeSearchCheckpoint({
       artifacts,
       strategies,
@@ -300,6 +361,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
         datasetId: options.context.datasetId,
         sceneId: options.context.sceneId,
         querySource,
+        labelSource,
         topK: options.topK,
         queryCount: queries.length,
         strategyCount: strategies.length,
@@ -307,15 +369,17 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
         completedSearches,
         totalSearches,
         completedLabels,
+        labelFailureCount,
         totalPossibleLabels,
         searchConcurrency,
         llmConcurrency,
         performance: currentPerformance()
       }
     });
-    if (labelFailures.length > 0) {
+    const maxAllowedLabelFailures = Math.floor(labelProgressTotal * options.maxLabelFailureRate);
+    if (labelFailures.length > maxAllowedLabelFailures) {
       throw new Error(
-        `LLM relevance judging failed for ${labelFailures.length} label(s). First failure: ${formatErrorMessage(labelFailures[0]?.error)}. Completed ${completedLabels}/${labelProgressTotal} unique labels; resume this run with --resume-run-id ${runId}.`
+        `LLM relevance judging failed for ${labelFailures.length} label(s), above allowed ${maxAllowedLabelFailures}. First failure: ${formatErrorMessage(labelFailures[0]?.error)}. Completed ${completedLabels}/${labelProgressTotal} unique labels; resume this run with --resume-run-id ${runId}.`
       );
     }
   } catch (error) {
@@ -330,6 +394,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
       sceneId: options.context.sceneId,
       profile: 'similarity-only',
       querySource,
+      labelSource,
       topK: options.topK,
       queryCount: queries.length,
       strategyCount: strategies.length,
@@ -337,6 +402,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
       completedSearches,
       totalSearches,
       completedLabels,
+      labelFailureCount,
       totalPossibleLabels,
       searchConcurrency,
       llmConcurrency,
@@ -373,10 +439,12 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
     sceneId: options.context.sceneId,
     profile: 'similarity-only',
     querySource,
+    labelSource,
     topK: options.topK,
     queryCount: queries.length,
     strategyCount: strategies.length,
     labelCount: labels.length,
+    labelFailureCount,
     recommendedStrategyId,
     strategyCoverage,
     strategies,
@@ -416,6 +484,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
     sceneId: options.context.sceneId,
     profile: 'similarity-only',
     querySource,
+    labelSource,
     topK: options.topK,
     queryCount: queries.length,
     strategyCount: strategies.length,
@@ -423,6 +492,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
     completedSearches,
     totalSearches,
     completedLabels,
+    labelFailureCount,
     totalPossibleLabels,
     searchConcurrency,
     llmConcurrency,
@@ -464,6 +534,19 @@ function buildRecommendation(report: TuningRunReportShape): Record<string, unkno
   };
 }
 
+function resolveEffectiveLabelSource(labelSource: TuningLabelSource, queries: TuningQuery[]): EffectiveTuningLabelSource {
+  if (labelSource !== 'auto') return labelSource;
+  return queries.length > 0 && queries.every(query => (query.sourceItemIds ?? []).length > 0) ? 'source-item' : 'llm';
+}
+
+function buildSourceItemJudgeProfileHash(): string {
+  return sha256Hex({
+    label_source: 'source-item',
+    version: 1,
+    grading: 'grade=3 when item id is in query.sourceItemIds, otherwise grade=0'
+  });
+}
+
 async function resolveQueries(options: RunSearchTuningOptions): Promise<TuningQuery[]> {
   if (options.queriesFile) {
     if (/\.csv$/i.test(options.queriesFile)) {
@@ -476,10 +559,26 @@ async function resolveQueries(options: RunSearchTuningOptions): Promise<TuningQu
     return (await loadTuningQueries(options.queriesFile)).slice(0, options.queryCount);
   }
   return generateTuningQueries({
-    llmConfig: options.llmConfig,
+    llmConfig: requireLlmConfig(options.llmConfig, 'LLM is required to generate tuning queries. Pass --queries or configure LLM.'),
     sampleItems: options.context.sampleItems,
     count: options.queryCount
   });
+}
+
+function requireLlmConfig(config: LlmClientConfig | undefined, message: string): LlmClientConfig {
+  if (!config) throw new Error(message);
+  return config;
+}
+
+function serializeLabelFailure(failure: LabelWorkerFailure): Record<string, unknown> {
+  return {
+    cache_key: failure.pending.cacheKey,
+    strategy_id: failure.pending.strategyId,
+    query_id: failure.pending.queryId,
+    item_id: failure.pending.itemId,
+    error: formatErrorMessage(failure.error),
+    created_at: new Date().toISOString()
+  };
 }
 
 interface TuningRunSetup {
@@ -511,6 +610,11 @@ interface PendingLabelBuildResult {
   cacheHits: number;
 }
 
+interface SourceItemLabelResult {
+  cacheHits: number;
+  createdLabels: number;
+}
+
 interface CheckpointStateBase {
   runId: string;
   generatedAt: string;
@@ -518,6 +622,7 @@ interface CheckpointStateBase {
   datasetId: string;
   sceneId?: string;
   querySource: 'user-provided' | 'generated';
+  labelSource: EffectiveTuningLabelSource;
   topK: number;
   queryCount: number;
   strategyCount: number;
@@ -525,6 +630,7 @@ interface CheckpointStateBase {
   completedSearches: number;
   totalSearches: number;
   completedLabels: number;
+  labelFailureCount: number;
   totalPossibleLabels: number;
   searchConcurrency: number;
   llmConcurrency: number;
@@ -549,6 +655,7 @@ async function createNewRunSetup(
   await writeJson(options.artifacts.strategyCoverage, strategyCoverage);
   await writeText(options.artifacts.rankings, '');
   await writeText(options.artifacts.labelsUsed, '');
+  await writeText(options.artifacts.labelFailures, '');
   await writeJson(options.artifacts.partialMetrics, []);
 
   return {
@@ -650,6 +757,62 @@ function buildPendingLabels(input: {
   };
 }
 
+async function materializeSourceItemLabels(input: {
+  rankings: TuningSearchRanking[];
+  queries: TuningQuery[];
+  datasetId: string;
+  judgeProfileHash: string;
+  labelsUsed: Map<string, JudgeLabel>;
+  labelCache: LabelCache;
+  cachedLabels: Map<string, JudgeLabel>;
+}): Promise<SourceItemLabelResult> {
+  const queryById = new Map(input.queries.map(query => [query.id, query]));
+  let cacheHits = 0;
+  let createdLabels = 0;
+  for (const ranking of input.rankings) {
+    const query = queryById.get(ranking.queryId);
+    if (!query) continue;
+    const sourceItemIds = new Set((query.sourceItemIds ?? []).map(String));
+    for (const item of ranking.items) {
+      const itemView = buildItemJudgeView(item);
+      const itemViewHash = sha256Hex(itemView);
+      const cacheKey = buildLabelCacheKey({
+        datasetId: input.datasetId,
+        queryHash: ranking.queryHash,
+        itemId: item.id,
+        itemViewHash,
+        judgeProfileHash: input.judgeProfileHash
+      });
+      const existingLabel = input.labelsUsed.get(cacheKey) ?? input.cachedLabels.get(cacheKey);
+      if (existingLabel) {
+        input.labelsUsed.set(existingLabel.cache_key, existingLabel);
+        cacheHits += 1;
+        continue;
+      }
+      const relevant = sourceItemIds.has(String(item.id));
+      const label: JudgeLabel = {
+        cache_key: cacheKey,
+        dataset_id: input.datasetId,
+        query_hash: ranking.queryHash,
+        item_id: item.id,
+        item_view_hash: itemViewHash,
+        judge_profile_hash: input.judgeProfileHash,
+        query_text: ranking.queryText,
+        item_view: itemView,
+        grade: relevant ? 3 : 0,
+        confidence: 1,
+        reason: relevant ? 'Item id matched query sourceItemIds.' : 'Item id did not match query sourceItemIds.',
+        llm_model: 'source-item-silver-v1',
+        created_at: new Date().toISOString()
+      };
+      await appendLabel(input.labelCache, label);
+      input.labelsUsed.set(label.cache_key, label);
+      createdLabels += 1;
+    }
+  }
+  return { cacheHits, createdLabels };
+}
+
 async function writeSearchCheckpoint(input: {
   artifacts: Record<string, string>;
   strategies: TuningStrategy[];
@@ -670,6 +833,7 @@ async function writeSearchCheckpoint(input: {
     sceneId: input.state.sceneId,
     profile: 'similarity-only',
     querySource: input.state.querySource,
+    labelSource: input.state.labelSource,
     topK: input.state.topK,
     queryCount: input.state.queryCount,
     strategyCount: input.state.strategyCount,
@@ -677,6 +841,7 @@ async function writeSearchCheckpoint(input: {
     completedSearches: input.state.completedSearches,
     totalSearches: input.state.totalSearches,
     completedLabels: input.state.completedLabels,
+    labelFailureCount: input.state.labelFailureCount,
     totalPossibleLabels: input.state.totalPossibleLabels,
     searchConcurrency: input.state.searchConcurrency,
     llmConcurrency: input.state.llmConcurrency,
@@ -702,6 +867,7 @@ function buildRunArtifacts(runDir: string): Record<string, string> {
     strategies: path.join(runDir, 'strategies.json'),
     strategyCoverage: path.join(runDir, 'strategy-coverage.json'),
     labelsUsed: path.join(runDir, 'labels-used.jsonl'),
+    labelFailures: path.join(runDir, 'label-failures.jsonl'),
     rankings: path.join(runDir, 'rankings.jsonl'),
     partialMetrics: path.join(runDir, 'partial-metrics.json'),
     performanceSummary: path.join(runDir, 'performance-summary.json'),
@@ -741,6 +907,7 @@ async function runLabelWorkers(input: {
   judgeProfileHash: string;
   datasetId: string;
   llmConfig: LlmClientConfig;
+  maxRetries: number;
   artifacts: Record<string, string>;
   strategies: TuningStrategy[];
   rankings: TuningSearchRanking[];
@@ -751,6 +918,7 @@ async function runLabelWorkers(input: {
   progress?: (event: TuningProgressEvent) => void;
   currentPerformance: () => TuningPerformanceSummary;
   onLabel: (result: { latencyMs: number }) => void;
+  onFailure: () => void;
 }): Promise<LabelWorkerFailure[]> {
   const failures: LabelWorkerFailure[] = [];
   if (input.pendingLabels.length === 0) return failures;
@@ -806,7 +974,8 @@ async function runLabelWorkers(input: {
       completed: completedLabels,
       total: input.progressTotal,
       strategyId: pending.strategyId,
-      queryId: pending.queryId
+      queryId: pending.queryId,
+      detail: true
     });
     if (completedMisses % 100 === 0 || completedMisses === input.pendingLabels.length) {
       const wallMs = Date.now() - phaseStartedAt;
@@ -821,29 +990,45 @@ async function runLabelWorkers(input: {
   };
 
   const runOne = async (pending: PendingLabel): Promise<void> => {
-    try {
-      const result = await judgeTimedRelevance({
-        llmConfig: input.llmConfig,
-        datasetId: input.datasetId,
-        query: pending.query,
-        queryHash: pending.queryHash,
-        itemView: pending.itemView,
-        itemViewHash: pending.itemViewHash,
-        judgeProfileHash: input.judgeProfileHash,
-        cacheKey: pending.cacheKey
-      });
-      await recordLabel(pending, result);
-    } catch (error) {
-      failures.push({ pending, error });
-      input.progress?.({
-        phase: 'label',
-        message: `LLM label failed for query ${pending.queryId}, item ${pending.itemId}: ${formatErrorMessage(error)}`,
-        completed: input.labelsUsed.size,
-        total: input.progressTotal,
-        strategyId: pending.strategyId,
-        queryId: pending.queryId
-      });
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= input.maxRetries; attempt += 1) {
+      try {
+        const result = await judgeTimedRelevance({
+          llmConfig: input.llmConfig,
+          datasetId: input.datasetId,
+          query: pending.query,
+          queryHash: pending.queryHash,
+          itemView: pending.itemView,
+          itemViewHash: pending.itemViewHash,
+          judgeProfileHash: input.judgeProfileHash,
+          cacheKey: pending.cacheKey
+        });
+        await recordLabel(pending, result);
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt < input.maxRetries) {
+          input.progress?.({
+            phase: 'label',
+            message: `Retrying LLM label for query ${pending.queryId}, item ${pending.itemId} after failure: ${formatErrorMessage(error)}`,
+            completed: input.labelsUsed.size,
+            total: input.progressTotal,
+            strategyId: pending.strategyId,
+            queryId: pending.queryId
+          });
+        }
+      }
     }
+    failures.push({ pending, error: lastError });
+    input.onFailure();
+    input.progress?.({
+      phase: 'label',
+      message: `LLM label failed for query ${pending.queryId}, item ${pending.itemId}: ${formatErrorMessage(lastError)}`,
+      completed: input.labelsUsed.size,
+      total: input.progressTotal,
+      strategyId: pending.strategyId,
+      queryId: pending.queryId
+    });
   };
 
   const workers = Array.from({ length: workerCount }, async () => {
@@ -887,8 +1072,11 @@ function buildPerformanceSummary(input: {
   writeMs: number;
   searchRequestsCompleted: number;
   searchLatencySumMs: number;
+  searchLatenciesMs: number[];
   labelRequestsCompleted: number;
+  labelRequestsFailed: number;
   llmLatencySumMs: number;
+  llmLatenciesMs: number[];
   labelCacheHits: number;
   labelCacheMisses: number;
   searchConcurrency: number;
@@ -905,10 +1093,20 @@ function buildPerformanceSummary(input: {
     writeMs: input.writeMs,
     searchRequestsCompleted: input.searchRequestsCompleted,
     labelRequestsCompleted: input.labelRequestsCompleted,
+    labelRequestsFailed: input.labelRequestsFailed,
     labelCacheHits: input.labelCacheHits,
     labelCacheMisses: input.labelCacheMisses,
     averageSearchLatencyMs: safeAverage(input.searchLatencySumMs, input.searchRequestsCompleted),
     averageLlmLatencyMs: safeAverage(input.llmLatencySumMs, input.labelRequestsCompleted),
+    searchLatencyP50Ms: percentile(input.searchLatenciesMs, 0.5),
+    searchLatencyP90Ms: percentile(input.searchLatenciesMs, 0.9),
+    searchLatencyP95Ms: percentile(input.searchLatenciesMs, 0.95),
+    searchLatencyP99Ms: percentile(input.searchLatenciesMs, 0.99),
+    llmLatencyP50Ms: percentile(input.llmLatenciesMs, 0.5),
+    llmLatencyP90Ms: percentile(input.llmLatenciesMs, 0.9),
+    llmLatencyP95Ms: percentile(input.llmLatenciesMs, 0.95),
+    llmLatencyP99Ms: percentile(input.llmLatenciesMs, 0.99),
+    labelFailureRate: safeAverage(input.labelRequestsFailed, input.labelRequestsCompleted + input.labelRequestsFailed),
     searchRequestsPerSecond: safeRate(input.searchRequestsCompleted, input.searchWallMs),
     llmRequestsPerSecond: safeRate(input.labelRequestsCompleted, input.llmWallMs),
     searchConcurrency: input.searchConcurrency,
@@ -922,6 +1120,13 @@ function safeAverage(total: number, count: number): number {
 
 function safeRate(count: number, durationMs: number): number {
   return durationMs > 0 ? count / (durationMs / 1000) : 0;
+}
+
+function percentile(values: number[], percentileValue: number): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * percentileValue));
+  return sorted[index] ?? 0;
 }
 
 function formatDuration(durationMs: number): string {

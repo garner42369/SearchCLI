@@ -1461,7 +1461,7 @@ COMMON FLAGS
         'vs search tune llm-check [--live] [service flags]',
         'vs search tune plan --application-id <id> [--dataset-id <id>] [--queries <file>] [--profile similarity-only] [service flags]',
         'vs search tune query-generate --application-id <id> [--dataset-id <id>] [--query-count <n>] [--sample-size <n>] [--query-batch-size <n>] [--llm-concurrency <n>] [service flags]',
-        'vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--profile similarity-only] [--search-concurrency <n>] [--llm-concurrency <n>] [--timeout-ms <ms>] [service flags]',
+        'vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--label-source <llm|source-item|auto>] [--profile similarity-only] [--search-concurrency <n>] [--llm-concurrency <n>] [--timeout-ms <ms>] [service flags]',
         'vs search tune apply --application-id <id> --run-id <id> [--dry-run | --confirm-create-scene] [service flags]',
         'vs search tune report --run-id <id> [--output-dir <dir>] [service flags]'
       ]
@@ -2004,7 +2004,7 @@ EXAMPLES
     'tune:run': `Run first-version automated search evaluation and similarity tuning.
 
 USAGE
-  vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--profile similarity-only] [--search-concurrency <n>] [--llm-concurrency <n>] [--timeout-ms <ms>] [service flags]
+  vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--label-source <llm|source-item|auto>] [--profile similarity-only] [--search-concurrency <n>] [--llm-concurrency <n>] [--timeout-ms <ms>] [service flags]
 
 DESCRIPTION
   Runs text-query similarity tuning with CLI-managed LLM query generation and pointwise relevance judging.
@@ -2018,17 +2018,22 @@ KEY FLAGS
   --dataset-id      Dataset ID. If omitted, the CLI tries to infer a unique search dataset.
   --queries         JSON, JSONL, or CSV query set. If omitted, the CLI generates queries from sample items.
   --query-count     Maximum query count. Default: 100.
-  --top-k           Results judged per query and strategy. Default: 20.
-  --max-strategies  Maximum candidate strategies. Default: 30.
-  --search-concurrency  Concurrent search requests. Default: 18.
-  --llm-concurrency     Concurrent LLM relevance judgements. Default: 100.
-  --timeout-ms      Request timeout. Default: 120000 for LLM-backed tuning.
-  --resume-run-id   Resume an incomplete run from its existing artifact directory.
-  --output-dir      Artifact root. Default: .viking/search-tuning.
+	  --top-k           Results judged per query and strategy. Default: 20.
+	  --max-strategies  Maximum candidate strategies. Default: 30.
+	  --label-source    Relevance label source: llm, source-item, or auto. Default: llm.
+	  --search-concurrency  Concurrent search requests. Default: 18.
+	  --llm-concurrency     Concurrent LLM relevance judgements. Default: 100.
+	  --llm-retries         Retries per failed LLM judgement. Default: 1.
+	  --max-label-failure-rate  Allowed failed label ratio before aborting. Default: 0.01.
+	  --verbose         Print per-query/per-label progress lines.
+	  --timeout-ms      Request timeout. Default: 120000 for LLM-backed tuning.
+	  --resume-run-id   Resume an incomplete run from its existing artifact directory.
+	  --output-dir      Artifact root. Default: .viking/search-tuning.
 
 EXAMPLES
   vs search tune run --application-id 123 --dataset-id 456 --profile similarity-only
-  vs search tune run --application-id 123 --dataset-id 456 --queries ./queries.jsonl --top-k 20 --max-strategies 30 --search-concurrency 18 --llm-concurrency 100`,
+  vs search tune run --application-id 123 --dataset-id 456 --queries ./queries.jsonl --top-k 20 --max-strategies 30 --search-concurrency 18 --llm-concurrency 100
+  vs search tune run --application-id 123 --dataset-id 456 --queries ./queries.jsonl --label-source source-item`,
     'tune:apply': `Create a new search scene from a completed tuning report recommendation.
 
 USAGE
@@ -2562,13 +2567,17 @@ async function runSearchCli(argv: string[]): Promise<void> {
             profile: optionalString(values.profile),
             queries: optionalString(values.queries),
             queryCount: parseOptionalInt(optionalString(values['query-count'])),
-            topK: parseOptionalInt(optionalString(values['top-k'])),
-            maxStrategies: parseOptionalInt(optionalString(values['max-strategies'])),
-            searchConcurrency: parseOptionalInt(optionalString(values['search-concurrency'])),
-            llmConcurrency: parseOptionalInt(optionalString(values['llm-concurrency'])),
-            outputDir: optionalString(values['output-dir']),
-            resumeRunId: optionalString(values['resume-run-id'])
-          });
+	            topK: parseOptionalInt(optionalString(values['top-k'])),
+	            maxStrategies: parseOptionalInt(optionalString(values['max-strategies'])),
+	            searchConcurrency: parseOptionalInt(optionalString(values['search-concurrency'])),
+	            llmConcurrency: parseOptionalInt(optionalString(values['llm-concurrency'])),
+	            labelSource: parseTuningLabelSource(optionalString(values['label-source'])),
+	            llmRetries: parseOptionalInt(optionalString(values['llm-retries'])),
+	            maxLabelFailureRate: parseOptionalNumber(optionalString(values['max-label-failure-rate'])),
+	            verbose: optionalBoolean(values.verbose),
+	            outputDir: optionalString(values['output-dir']),
+	            resumeRunId: optionalString(values['resume-run-id'])
+	          });
           return;
         case 'apply':
           await runSearchTuneApplyCommand({
@@ -2765,9 +2774,13 @@ function parseStandaloneOptions(argv: string[]) {
       'query-batch-size': { type: 'string' },
       'top-k': { type: 'string' },
       'max-strategies': { type: 'string' },
-      'search-concurrency': { type: 'string' },
-      'llm-concurrency': { type: 'string' },
-      'run-id': { type: 'string' },
+	      'search-concurrency': { type: 'string' },
+	      'llm-concurrency': { type: 'string' },
+	      'label-source': { type: 'string' },
+	      'llm-retries': { type: 'string' },
+	      'max-label-failure-rate': { type: 'string' },
+	      verbose: { type: 'boolean' },
+	      'run-id': { type: 'string' },
       'resume-run-id': { type: 'string' },
       'scene-name': { type: 'string' },
       'scene-description': { type: 'string' },
@@ -3642,6 +3655,23 @@ function parseOptionalInt(value?: string): number | undefined {
     throw new Error(`Invalid integer value: ${value}`);
   }
   return parsed;
+}
+
+function parseOptionalNumber(value?: string): number | undefined {
+  if (!value) return undefined;
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`Invalid number value: ${value}`);
+  }
+  return parsed;
+}
+
+function parseTuningLabelSource(value?: string): 'llm' | 'source-item' | 'auto' | undefined {
+  if (!value) return undefined;
+  if (value === 'llm' || value === 'source-item' || value === 'auto') {
+    return value;
+  }
+  throw new Error(`Invalid --label-source value: ${value}`);
 }
 
 function parseDatasetTypeValue(value: unknown): number {

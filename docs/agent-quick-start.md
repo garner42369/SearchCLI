@@ -137,7 +137,9 @@ vs search tune apply --application-id <app> --run-id <run-id> --confirm-create-s
 ```
 
 The first version fixes `mode=UserDefined` and tunes only user-defined recall mode, recall weights, keyword match ratio, and max retrieved count. `search tune apply` creates a new candidate scene; it does not switch the default entrance.
-Use the emitted `performance-summary.json` to identify whether time is dominated by search requests, LLM judging, metrics, artifact writes, or cache misses. LLM judging uses worker-pool scheduling; slow LLM requests should not block checkpointing of labels that already returned.
+If the query file has `sourceItemIds`, `search tune plan` reports source-item coverage and a suggested first-pass shape. For a fast pruning pass, run `search tune run ... --label-source source-item --json`; this does not call the LLM judge and should be presented as source-item silver-label evaluation, not final human-grade relevance.
+For LLM judging, use `--llm-retries`, `--max-label-failure-rate`, and `--verbose` when diagnosing provider long tails.
+Use the emitted `performance-summary.json` to identify whether time is dominated by search requests, LLM judging, metrics, artifact writes, cache misses, or label failures. LLM judging uses worker-pool scheduling; slow LLM requests should not block checkpointing of labels that already returned.
 For generated query sets, inspect `requestedQueryCount`, `actualQueryCount`, `shortfall`, and `warnings`; do not continue to `plan` or `run` when `ok=false`.
 
 If a run is interrupted, inspect `.viking/search-tuning/runs/<run-id>/run-state.json` and resume with:

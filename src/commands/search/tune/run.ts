@@ -29,6 +29,17 @@ export default class SearchTuneRun extends Command {
     'max-strategies': Flags.integer({ default: 30, description: 'Maximum number of candidate strategies to evaluate.' }),
     'search-concurrency': Flags.integer({ default: 18, min: 1, description: 'Concurrent search requests. Default: 18.' }),
     'llm-concurrency': Flags.integer({ min: 1, description: 'Concurrent LLM relevance judgements. Default: 100.' }),
+    'label-source': Flags.string({
+      default: 'llm',
+      options: ['llm', 'source-item', 'auto'],
+      description: 'Relevance label source: llm, source-item, or auto. Default: llm.'
+    }),
+    'llm-retries': Flags.integer({ default: 1, min: 0, description: 'Retries for each failed LLM relevance judgement. Default: 1.' }),
+    'max-label-failure-rate': Flags.string({
+      default: '0.01',
+      description: 'Maximum failed label ratio allowed before failing the run. Default: 0.01.'
+    }),
+    verbose: Flags.boolean({ default: false, description: 'Print per-query and per-label progress events.' }),
     'output-dir': Flags.string({ description: 'Tuning artifact root. Defaults to .viking/search-tuning.' }),
     'resume-run-id': Flags.string({ description: 'Resume an incomplete run from run-state.json, rankings.jsonl, labels-used.jsonl, partial-metrics.json, and performance-summary.json.' })
   };
@@ -52,6 +63,10 @@ export default class SearchTuneRun extends Command {
       maxStrategies: flags['max-strategies'],
       searchConcurrency: flags['search-concurrency'],
       llmConcurrency: flags['llm-concurrency'],
+      labelSource: flags['label-source'] as 'llm' | 'source-item' | 'auto',
+      llmRetries: flags['llm-retries'],
+      maxLabelFailureRate: Number.parseFloat(flags['max-label-failure-rate']),
+      verbose: flags.verbose,
       outputDir: flags['output-dir'],
       resumeRunId: flags['resume-run-id']
     });
