@@ -15,9 +15,14 @@ export default class SearchTuneQueryGenerate extends Command {
 
   static override flags = {
     ...serviceFlags,
+    'timeout-ms': Flags.integer({ default: 60000, description: 'Request timeout in milliseconds. Default: 60000 for LLM-backed query generation.' }),
     'application-id': Flags.string({ required: true, description: 'Viking application ID.' }),
     'dataset-id': Flags.string({ description: 'Dataset ID. If omitted, the CLI tries to infer a unique search dataset.' }),
     'query-count': Flags.integer({ default: 100, description: 'Maximum number of queries to generate.' }),
+    'min-query-count': Flags.integer({ min: 1, description: 'Minimum acceptable generated query count. Defaults to the requested count when <=10, otherwise max(10, ceil(query-count * 0.8)).' }),
+    'sample-size': Flags.integer({ default: 200, min: 1, description: 'Dataset sample items to load across pages. Default: 200.' }),
+    'query-batch-size': Flags.integer({ default: 10, min: 1, description: 'Queries requested from each LLM generation call. Default: 10.' }),
+    'llm-concurrency': Flags.integer({ default: 100, min: 1, description: 'Concurrent LLM query generation calls. Default: 100.' }),
     'output-dir': Flags.string({ description: 'Tuning artifact root. Defaults to .viking/search-tuning.' })
   };
 
@@ -34,6 +39,10 @@ export default class SearchTuneQueryGenerate extends Command {
       applicationId: flags['application-id'],
       datasetId: flags['dataset-id'],
       queryCount: flags['query-count'],
+      minQueryCount: flags['min-query-count'],
+      sampleSize: flags['sample-size'],
+      queryBatchSize: flags['query-batch-size'],
+      llmConcurrency: flags['llm-concurrency'],
       outputDir: flags['output-dir']
     });
   }

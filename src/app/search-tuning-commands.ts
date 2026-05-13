@@ -12,7 +12,7 @@ import { buildSceneApplyDraft, withSceneId } from '../core/search-tuning/apply';
 import { buildSearchTuningPlan } from '../core/search-tuning/plan';
 import { inspectTuningContext } from '../core/search-tuning/inspect';
 import { loadTuningReport, loadTuningRunState, runSearchTuning, type TuningProgressEvent } from '../core/search-tuning/runner';
-import { generateTuningQueries } from '../core/search-tuning/query-generator';
+import { generateTuningQueries, generateTuningQuerySet } from '../core/search-tuning/query-generator';
 import { stableStringify } from '../core/search-tuning/hash';
 
 export interface SearchTuneServiceOptions extends ServiceConfigInput {
@@ -50,6 +50,10 @@ export interface SearchTuneQueryGenerateOptions extends SearchTuneServiceOptions
   datasetId?: string;
   sceneId?: string;
   queryCount?: number;
+  minQueryCount?: number;
+  sampleSize?: number;
+  queryBatchSize?: number;
+  llmConcurrency?: number;
   outputDir?: string;
 }
 
@@ -200,8 +204,10 @@ export async function runSearchTunePlanCommand(options: SearchTunePlanOptions): 
 }
 
 export async function runSearchTuneQueryGenerateCommand(options: SearchTuneQueryGenerateOptions): Promise<void> {
+  const effectiveTimeoutMs = options.timeoutMs ?? 60000;
+  const startedAt = Date.now();
   const llmConfig = resolveLlmClientConfig({
-    timeoutMs: options.timeoutMs
+    timeoutMs: effectiveTimeoutMs
   });
   if (!llmConfig) {
     throw new Error(
@@ -209,38 +215,72 @@ export async function runSearchTuneQueryGenerateCommand(options: SearchTuneQuery
     );
   }
 
-  const serviceConfig = resolveServiceConfig(toServiceConfigInput(options));
+  const serviceConfig = resolveServiceConfig({
+    ...toServiceConfigInput(options),
+    timeoutMs: effectiveTimeoutMs
+  });
+  const sampleLoadStartedAt = Date.now();
   const context = await inspectTuningContext({
     config: serviceConfig,
     applicationId: options.applicationId,
     datasetId: options.datasetId,
     sceneId: options.sceneId,
-    sampleSize: 20
+    sampleSize: options.sampleSize ?? 200
   });
+  const sampleLoadMs = Date.now() - sampleLoadStartedAt;
   const queryCount = options.queryCount ?? 100;
-  const queries = await generateTuningQueries({
+  const minQueryCount = options.minQueryCount ?? defaultMinQueryCount(queryCount);
+  const generation = await generateTuningQuerySet({
     llmConfig,
     sampleItems: context.sampleItems,
-    count: queryCount
+    count: queryCount,
+    batchSize: options.queryBatchSize ?? 10,
+    llmConcurrency: options.llmConcurrency ?? 100
   });
   const generatedAt = new Date().toISOString();
   const fileId = generatedAt.replaceAll(':', '-').replace(/\.\d+Z$/, 'Z');
   const rootDir = path.resolve(options.outputDir ?? '.viking/search-tuning');
   const queryFile = path.join(rootDir, 'query-sets', `queries_${fileId}.jsonl`);
-  await writeText(queryFile, `${queries.map(query => stableStringify(query)).join('\n')}\n`);
+  const writeStartedAt = Date.now();
+  await writeText(queryFile, `${generation.queries.map(query => stableStringify(query)).join('\n')}\n`);
+  const writeMs = Date.now() - writeStartedAt;
+  const warnings = [...generation.warnings];
+  if (generation.actualQueryCount < minQueryCount) {
+    warnings.push(`actual query count ${generation.actualQueryCount} is below minQueryCount ${minQueryCount}.`);
+  }
+  const ok = generation.actualQueryCount >= minQueryCount;
 
   await printOutput({
-    ok: true,
+    ok,
     generatedAt,
     applicationId: options.applicationId,
     datasetId: context.datasetId,
     sceneId: context.sceneId,
     querySource: 'generated',
-    queryCount: queries.length,
+    queryCount: generation.actualQueryCount,
+    requestedQueryCount: generation.requestedQueryCount,
+    actualQueryCount: generation.actualQueryCount,
+    minQueryCount,
+    shortfall: generation.shortfall,
     queryFile,
-    typeCounts: countBy(queries.map(query => query.type ?? 'unknown')),
-    sampleQueries: queries.slice(0, Math.min(20, queries.length))
+    sampleItemCount: context.sampleItems.length,
+    queryBatchSize: options.queryBatchSize ?? 10,
+    llmConcurrency: options.llmConcurrency ?? 100,
+    llmRequestCount: generation.llmRequestCount,
+    duplicateQueryCount: generation.duplicateQueryCount,
+    warnings,
+    performance: {
+      durationMs: Date.now() - startedAt,
+      sampleLoadMs,
+      llmWallMs: generation.llmWallMs,
+      writeMs
+    },
+    typeCounts: countBy(generation.queries.map(query => query.type ?? 'unknown')),
+    sampleQueries: generation.queries.slice(0, Math.min(20, generation.queries.length))
   });
+  if (!ok) {
+    process.exitCode = 1;
+  }
 }
 
 export async function runSearchTuneReportCommand(options: SearchTuneReportOptions): Promise<void> {
@@ -305,6 +345,11 @@ function countBy(values: string[]): Record<string, number> {
     counts[value] = (counts[value] ?? 0) + 1;
   }
   return counts;
+}
+
+function defaultMinQueryCount(queryCount: number): number {
+  if (queryCount <= 10) return queryCount;
+  return Math.min(queryCount, Math.max(10, Math.ceil(queryCount * 0.8)));
 }
 
 function writeProgressEvent(event: TuningProgressEvent): void {

@@ -155,8 +155,8 @@ SearchCLI is an interactive AI search command-line tool. Below is the list of cu
     *   Usage: `vs search tune plan --application-id <id> [--dataset-id <id>] [--queries <file>] [--profile similarity-only] [--query-count <n>] [--top-k <n>] [--max-strategies <n>] [service flags]`
     *   Description: plan first-version text-query similarity evaluation without calling search or LLM services; prints query source, request/label estimate, fixed `mode=UserDefined`, tuned parameter list, and strategy coverage
 *   `vs search tune query-generate --application-id <id>`
-    *   Usage: `vs search tune query-generate --application-id <id> [--dataset-id <id>] [--query-count <n>] [--output-dir <dir>] [service flags]`
-    *   Description: generate a reusable synthetic JSONL query set from dataset samples with the configured CLI LLM
+    *   Usage: `vs search tune query-generate --application-id <id> [--dataset-id <id>] [--query-count <n>] [--min-query-count <n>] [--sample-size <n>] [--query-batch-size <n>] [--llm-concurrency <n>] [--output-dir <dir>] [service flags]`
+    *   Description: generate a reusable synthetic JSONL query set from paged dataset samples with batched concurrent LLM calls; output includes requested/actual counts, shortfall, warnings, and generation performance
 *   `vs search tune run --application-id <id>`
     *   Usage: `vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--profile similarity-only] [--query-count <n>] [--top-k <n>] [--max-strategies <n>] [--search-concurrency <n>] [--llm-concurrency <n>] [--output-dir <dir>] [service flags]`
     *   Description: run first-version text-query similarity evaluation and tuning with LLM query generation and pointwise relevance judging; search requests default to 18-way concurrency and LLM judgements default to 100-way concurrency; writes `run-state.json`, `rankings.jsonl`, `labels-used.jsonl`, `partial-metrics.json`, and `performance-summary.json` during execution so interrupted runs can be resumed and bottlenecks can be inspected

@@ -44,11 +44,20 @@ async function loadDatasetSamples(
   sampleSize: number
 ): Promise<Array<Record<string, unknown>>> {
   try {
-    const response = await new VikingRuntimeApiClient(config).dataList(datasetId, {
-      page_number: 1,
-      page_size: sampleSize
-    });
-    return normalizeDataListResponse(response).slice(0, sampleSize);
+    const client = new VikingRuntimeApiClient(config);
+    const samples: Array<Record<string, unknown>> = [];
+    const pageSize = Math.min(100, Math.max(1, sampleSize));
+    for (let pageNumber = 1; samples.length < sampleSize; pageNumber += 1) {
+      const response = await client.dataList(datasetId, {
+        page_number: pageNumber,
+        page_size: Math.min(pageSize, sampleSize - samples.length)
+      });
+      const pageItems = normalizeDataListResponse(response);
+      if (pageItems.length === 0) break;
+      samples.push(...pageItems);
+      if (pageItems.length < pageSize) break;
+    }
+    return samples.slice(0, sampleSize);
   } catch {
     return [];
   }

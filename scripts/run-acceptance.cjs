@@ -6,6 +6,7 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
@@ -32,6 +33,7 @@ async function main() {
   await runTest('search-tune-help', testSearchTuneHelp);
   await runTest('search-run-requires-scene-help', testSearchRunRequiresSceneHelp);
   await runTest('search-tune-plan', testSearchTunePlan);
+  await runTest('search-tune-query-generate-mock', testSearchTuneQueryGenerateMock);
   await runTest('search-tune-apply-dry-run', testSearchTuneApplyDryRun);
   await runTest('search-tune-run-help', testSearchTuneRunHelp);
   await runTest('app-list-help', testAppListHelp);
@@ -236,6 +238,128 @@ async function testSearchTuneRunHelp() {
   assert.match(stdout, /partial-metrics\.json/);
   assert.match(stdout, /performance-summary\.json/);
   return `${command.prefix} search tune run --help`;
+}
+
+async function testSearchTuneQueryGenerateMock() {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'viking-acceptance-query-generate-'));
+  const serverState = {
+    dataListRequests: 0,
+    llmRequests: 0
+  };
+  const server = await startQueryGenerateMockServer(serverState);
+  try {
+    const { stdout } = await runCli(
+      [
+        'search',
+        'tune',
+        'query-generate',
+        '--application-id',
+        'app-1',
+        '--dataset-id',
+        'ds-1',
+        '--query-count',
+        '6',
+        '--min-query-count',
+        '6',
+        '--query-batch-size',
+        '2',
+        '--sample-size',
+        '250',
+        '--llm-concurrency',
+        '2',
+        '--timeout-ms',
+        '60000',
+        '--output-dir',
+        workspace,
+        '--base-url',
+        server.baseUrl,
+        '--ak',
+        'ak',
+        '--sk',
+        'sk',
+        '--json'
+      ],
+      {
+        env: {
+          VIKING_LLM_BASE_URL: server.baseUrl,
+          VIKING_LLM_API_KEY: 'llm-key',
+          VIKING_LLM_MODEL: 'mock-model'
+        }
+      }
+    );
+    const payload = JSON.parse(stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.requestedQueryCount, 6);
+    assert.equal(payload.actualQueryCount, 6);
+    assert.equal(payload.shortfall, 0);
+    assert.equal(payload.queryCount, 6);
+    assert.equal(payload.sampleItemCount, 250);
+    assert.equal(payload.llmRequestCount, 3);
+    assert.ok(payload.performance.durationMs >= 0);
+    assert.ok(payload.performance.llmWallMs >= 0);
+    assert.deepEqual(payload.warnings, []);
+    const queryLines = fs.readFileSync(payload.queryFile, 'utf8').trim().split('\n');
+    assert.equal(queryLines.length, 6);
+    assert.equal(serverState.llmRequests, 3);
+    assert.ok(serverState.dataListRequests >= 3);
+    return `${command.prefix} search tune query-generate --application-id app-1 --dataset-id ds-1 --query-count 6 --json`;
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+}
+
+async function startQueryGenerateMockServer(state) {
+  const items = Array.from({ length: 250 }, (_, index) => ({
+    _id: `item-${index + 1}`,
+    raw_data: JSON.stringify({
+      id: `item-${index + 1}`,
+      title: `Viking mock item ${index + 1}`,
+      category: index % 2 === 0 ? 'docs' : 'solutions'
+    })
+  }));
+
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk;
+    });
+    req.on('end', () => {
+      const parsedBody = body ? JSON.parse(body) : {};
+      res.setHeader('content-type', 'application/json');
+      if (req.url === '/api/v1/dataset/ds-1/list_items') {
+        state.dataListRequests += 1;
+        const pageNumber = parsedBody.page_number ?? 1;
+        const pageSize = parsedBody.page_size ?? 100;
+        const start = (pageNumber - 1) * pageSize;
+        res.end(JSON.stringify({ result: { items: items.slice(start, start + pageSize) } }));
+        return;
+      }
+      if (req.url.endsWith('/chat/completions')) {
+        state.llmRequests += 1;
+        const userPayload = JSON.parse(parsedBody.messages?.[1]?.content ?? '{}');
+        const count = userPayload.count ?? 1;
+        const batchIndex = userPayload.batch_index ?? state.llmRequests;
+        const queries = Array.from({ length: count }, (_, index) => ({
+          id: `batch_${batchIndex}_q_${index + 1}`,
+          text: `mock query ${batchIndex}-${index + 1}`,
+          type: 'title_rewrite',
+          intent: 'mock query generation',
+          sourceItemIds: [`item-${batchIndex}-${index + 1}`]
+        }));
+        res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(queries) } }] }));
+        return;
+      }
+      res.statusCode = 404;
+      res.end(JSON.stringify({ error: `unexpected path: ${req.url}` }));
+    });
+  });
+
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    close: callback => server.close(callback)
+  };
 }
 
 async function testSearchTuneApplyDryRun() {

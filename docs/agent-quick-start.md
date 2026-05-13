@@ -128,7 +128,7 @@ When the user asks for search tuning, ask first whether they have a tuning query
 
 ```bash
 vs search tune llm-check --json
-vs search tune query-generate --application-id <app> --dataset-id <dataset> --query-count 100 --json
+vs search tune query-generate --application-id <app> --dataset-id <dataset> --query-count 100 --sample-size 200 --query-batch-size 10 --llm-concurrency 100 --timeout-ms 60000 --json
 vs search tune plan --application-id <app> --dataset-id <dataset> --queries <queryFile> --json
 vs search tune run --application-id <app> --dataset-id <dataset> --queries <queryFile> --search-concurrency 18 --llm-concurrency 100
 vs search tune report --run-id <run-id> --json
@@ -138,6 +138,7 @@ vs search tune apply --application-id <app> --run-id <run-id> --confirm-create-s
 
 The first version fixes `mode=UserDefined` and tunes only user-defined recall mode, recall weights, keyword match ratio, and max retrieved count. `search tune apply` creates a new candidate scene; it does not switch the default entrance.
 Use the emitted `performance-summary.json` to identify whether time is dominated by search requests, LLM judging, metrics, artifact writes, or cache misses.
+For generated query sets, inspect `requestedQueryCount`, `actualQueryCount`, `shortfall`, and `warnings`; do not continue to `plan` or `run` when `ok=false`.
 
 If a run is interrupted, inspect `.viking/search-tuning/runs/<run-id>/run-state.json` and resume with:
 

@@ -1460,7 +1460,7 @@ COMMON FLAGS
         'vs search scene delete --application-id <id> --scene-id <id> [service flags]',
         'vs search tune llm-check [--live] [service flags]',
         'vs search tune plan --application-id <id> [--dataset-id <id>] [--queries <file>] [--profile similarity-only] [service flags]',
-        'vs search tune query-generate --application-id <id> [--dataset-id <id>] [--query-count <n>] [service flags]',
+        'vs search tune query-generate --application-id <id> [--dataset-id <id>] [--query-count <n>] [--sample-size <n>] [--query-batch-size <n>] [--llm-concurrency <n>] [service flags]',
         'vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--profile similarity-only] [--search-concurrency <n>] [--llm-concurrency <n>] [service flags]',
         'vs search tune apply --application-id <id> --run-id <id> [--dry-run | --confirm-create-scene] [service flags]',
         'vs search tune report --run-id <id> [--output-dir <dir>] [service flags]'
@@ -1981,20 +1981,25 @@ EXAMPLES
     'tune:query-generate': `Generate a reusable synthetic query set for search tuning.
 
 USAGE
-  vs search tune query-generate --application-id <id> [--dataset-id <id>] [--query-count <n>] [--output-dir <dir>] [service flags]
+  vs search tune query-generate --application-id <id> [--dataset-id <id>] [--query-count <n>] [--min-query-count <n>] [--sample-size <n>] [--query-batch-size <n>] [--llm-concurrency <n>] [--output-dir <dir>] [service flags]
 
 DESCRIPTION
-  Uses dataset samples and the configured CLI LLM to generate a JSONL query set. Review the returned
-  sample queries before passing the query file to \`search tune plan\` and \`search tune run\`.
+  Uses paged dataset samples and the configured CLI LLM to generate a JSONL query set in multiple
+  batches. Review the returned sample queries, warnings, and shortfall before passing the query file
+  to \`search tune plan\` and \`search tune run\`.
 
 KEY FLAGS
   --application-id  Target application ID.
   --dataset-id      Dataset ID. If omitted, the CLI tries to infer a unique search dataset.
   --query-count     Maximum query count. Default: 100.
+  --min-query-count Minimum acceptable query count. Defaults to query-count for <=10, otherwise max(10, ceil(query-count * 0.8)).
+  --sample-size     Dataset sample items to load across pages. Default: 200.
+  --query-batch-size Queries requested from each LLM generation call. Default: 10.
+  --llm-concurrency Concurrent LLM generation calls. Default: 100.
   --output-dir      Artifact root. Default: .viking/search-tuning.
 
 EXAMPLES
-  vs search tune query-generate --application-id 123 --dataset-id 456 --query-count 100
+  vs search tune query-generate --application-id 123 --dataset-id 456 --query-count 100 --sample-size 200 --query-batch-size 10 --llm-concurrency 100
   vs search tune query-generate --application-id 123 --dataset-id 456 --output-dir ./.viking/search-tuning`,
     'tune:run': `Run first-version automated search evaluation and similarity tuning.
 
@@ -2540,6 +2545,10 @@ async function runSearchCli(argv: string[]): Promise<void> {
             applicationId: requiredString(values['application-id'], '--application-id'),
             datasetId: optionalString(values['dataset-id']),
             queryCount: parseOptionalInt(optionalString(values['query-count'])),
+            minQueryCount: parseOptionalInt(optionalString(values['min-query-count'])),
+            sampleSize: parseOptionalInt(optionalString(values['sample-size'])),
+            queryBatchSize: parseOptionalInt(optionalString(values['query-batch-size'])),
+            llmConcurrency: parseOptionalInt(optionalString(values['llm-concurrency'])),
             outputDir: optionalString(values['output-dir'])
           });
           return;
@@ -2750,6 +2759,9 @@ function parseStandaloneOptions(argv: string[]) {
       query: { type: 'string' },
       queries: { type: 'string' },
       'query-count': { type: 'string' },
+      'min-query-count': { type: 'string' },
+      'sample-size': { type: 'string' },
+      'query-batch-size': { type: 'string' },
       'top-k': { type: 'string' },
       'max-strategies': { type: 'string' },
       'search-concurrency': { type: 'string' },
