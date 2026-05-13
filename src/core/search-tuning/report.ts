@@ -22,6 +22,18 @@ export function renderTuningMarkdownReport(report: TuningRunReportShape): string
   lines.push(`- Labels Used: ${report.labelCount}`);
   lines.push('');
 
+  if (report.performance) {
+    lines.push(`## Performance`);
+    lines.push('');
+    lines.push(`- Total elapsed: ${formatDuration(report.performance.totalElapsedMs)}`);
+    lines.push(`- Setup: ${formatDuration(report.performance.setupMs)}`);
+    lines.push(`- Search wall time: ${formatDuration(report.performance.searchWallMs)} (${formatMetric(report.performance.searchRequestsPerSecond)} req/s, avg latency ${formatDuration(report.performance.averageSearchLatencyMs)}, concurrency ${report.performance.searchConcurrency})`);
+    lines.push(`- LLM wall time: ${formatDuration(report.performance.llmWallMs)} (${formatMetric(report.performance.llmRequestsPerSecond)} req/s, avg latency ${formatDuration(report.performance.averageLlmLatencyMs)}, concurrency ${report.performance.llmConcurrency})`);
+    lines.push(`- LLM labels: ${report.performance.labelRequestsCompleted} judged, ${report.performance.labelCacheHits} cache hits, ${report.performance.labelCacheMisses} cache misses`);
+    lines.push(`- Metrics/write: ${formatDuration(report.performance.metricsMs)} / ${formatDuration(report.performance.writeMs)}`);
+    lines.push('');
+  }
+
   if (recommended && metric) {
     lines.push(`## Recommendation`);
     lines.push('');
@@ -85,4 +97,10 @@ export function renderTuningMarkdownReport(report: TuningRunReportShape): string
 
 function formatMetric(value: number): string {
   return value.toFixed(4);
+}
+
+function formatDuration(durationMs: number): string {
+  if (!Number.isFinite(durationMs) || durationMs <= 0) return '0ms';
+  if (durationMs < 1000) return `${Math.round(durationMs)}ms`;
+  return `${(durationMs / 1000).toFixed(2)}s`;
 }

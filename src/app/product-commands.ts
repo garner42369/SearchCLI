@@ -2004,8 +2004,9 @@ USAGE
 DESCRIPTION
   Runs text-query similarity tuning with CLI-managed LLM query generation and pointwise relevance judging.
   The first version disables personalization in requests and evaluates user-defined recall strategies only.
-  While running, it writes run-state.json, rankings.jsonl, labels-used.jsonl, and partial-metrics.json
-  under the run artifact directory so interrupted runs can be inspected and resumed.
+  While running, it writes run-state.json, rankings.jsonl, labels-used.jsonl, partial-metrics.json,
+  and performance-summary.json under the run artifact directory so interrupted runs can be inspected
+  and resumed.
 
 KEY FLAGS
   --application-id  Target application ID.

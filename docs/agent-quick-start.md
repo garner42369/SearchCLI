@@ -137,6 +137,7 @@ vs search tune apply --application-id <app> --run-id <run-id> --confirm-create-s
 ```
 
 The first version fixes `mode=UserDefined` and tunes only user-defined recall mode, recall weights, keyword match ratio, and max retrieved count. `search tune apply` creates a new candidate scene; it does not switch the default entrance.
+Use the emitted `performance-summary.json` to identify whether time is dominated by search requests, LLM judging, metrics, artifact writes, or cache misses.
 
 If a run is interrupted, inspect `.viking/search-tuning/runs/<run-id>/run-state.json` and resume with:
 

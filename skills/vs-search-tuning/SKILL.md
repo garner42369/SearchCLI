@@ -63,6 +63,7 @@ This first version is for text-query similarity only. It fixes `mode=UserDefined
 8. While a run is active, use the artifact paths from progress output if troubleshooting is needed:
    - `run-state.json`: current status, completed searches, labels, and resume metadata
    - `partial-metrics.json`: partial metrics from completed query/strategy pairs
+   - `performance-summary.json`: elapsed time, search/LLM wall time, average latency, throughput, cache hits, and configured concurrency
    - `rankings.jsonl` and `labels-used.jsonl`: completed rankings and labels used by the run
    If the process is interrupted, resume with `vs search tune run --application-id <id> --resume-run-id <run-id>`.
 9. Read and summarize the generated report:

@@ -26,7 +26,7 @@ export default class SearchTuneRun extends Command {
     'search-concurrency': Flags.integer({ default: 18, min: 1, description: 'Concurrent search requests. Default: 18.' }),
     'llm-concurrency': Flags.integer({ min: 1, description: 'Concurrent LLM relevance judgements. Default: 100.' }),
     'output-dir': Flags.string({ description: 'Tuning artifact root. Defaults to .viking/search-tuning.' }),
-    'resume-run-id': Flags.string({ description: 'Resume an incomplete run from run-state.json, rankings.jsonl, labels-used.jsonl, and partial-metrics.json.' })
+    'resume-run-id': Flags.string({ description: 'Resume an incomplete run from run-state.json, rankings.jsonl, labels-used.jsonl, partial-metrics.json, and performance-summary.json.' })
   };
 
   async run(): Promise<void> {

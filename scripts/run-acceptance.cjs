@@ -234,6 +234,7 @@ async function testSearchTuneRunHelp() {
   assert.match(stdout, /--resume-run-id/);
   assert.match(stdout, /run-state\.json/);
   assert.match(stdout, /partial-metrics\.json/);
+  assert.match(stdout, /performance-summary\.json/);
   return `${command.prefix} search tune run --help`;
 }
 

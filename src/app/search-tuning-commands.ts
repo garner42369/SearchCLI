@@ -166,6 +166,8 @@ export async function runSearchTuneRunCommand(options: SearchTuneRunOptions): Pr
     recommendation: report.artifacts.recommendation,
     recommendedSearchDynamic: report.artifacts.recommendedSearchDynamic,
     recommendedRequestParams: report.artifacts.recommendedRequestParams,
+    performanceSummary: report.artifacts.performanceSummary,
+    performance: report.performance,
     runState: report.artifacts.runState,
     partialMetrics: report.artifacts.partialMetrics,
     rankings: report.artifacts.rankings,

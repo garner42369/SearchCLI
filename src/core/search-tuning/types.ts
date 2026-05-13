@@ -104,6 +104,27 @@ export interface StrategyMetrics {
   queryMetrics: QueryMetrics[];
 }
 
+export interface TuningPerformanceSummary {
+  startedAt: string;
+  endedAt?: string;
+  totalElapsedMs: number;
+  setupMs: number;
+  searchWallMs: number;
+  llmWallMs: number;
+  metricsMs: number;
+  writeMs: number;
+  searchRequestsCompleted: number;
+  labelRequestsCompleted: number;
+  labelCacheHits: number;
+  labelCacheMisses: number;
+  averageSearchLatencyMs: number;
+  averageLlmLatencyMs: number;
+  searchRequestsPerSecond: number;
+  llmRequestsPerSecond: number;
+  searchConcurrency: number;
+  llmConcurrency: number;
+}
+
 export interface TuningRunReportShape {
   runId: string;
   generatedAt: string;
@@ -120,6 +141,7 @@ export interface TuningRunReportShape {
   strategyCoverage: TuningStrategyCoverage;
   strategies: TuningStrategy[];
   metrics: StrategyMetrics[];
+  performance?: TuningPerformanceSummary;
   artifacts: Record<string, string>;
 }
 
@@ -143,6 +165,7 @@ export interface TuningRunStateShape {
   totalPossibleLabels: number;
   searchConcurrency: number;
   llmConcurrency: number;
+  performance?: TuningPerformanceSummary;
   recommendedStrategyId?: string;
   error?: string;
   artifacts: Record<string, string>;
