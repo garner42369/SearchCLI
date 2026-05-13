@@ -9,6 +9,7 @@ import { z } from 'zod';
 import {
   DEFAULT_CREDENTIAL_PROFILE,
   getCredentialStoreStatus,
+  loadLlmApiCredentialsSync,
   loadServiceCredentialsSync,
   resolveCredentialStoreMode,
   credentialStoreModeSchema,
@@ -53,6 +54,7 @@ const cliConfigSchema = z.object({
   outputDir: z.string().min(1).optional(),
   sessionDir: z.string().min(1).optional(),
   llmBaseUrl: z.string().url().optional(),
+  llmProvider: z.literal('openai-compatible').optional(),
   llmApiKey: z.string().min(1).optional(),
   llmAccessKeyId: z.string().min(1).optional(),
   llmSecretKey: z.string().min(1).optional(),
@@ -81,6 +83,7 @@ export interface ResolvedCliDefaults {
   outputDir: string;
   sessionDir: string;
   llmBaseUrl?: string;
+  llmProvider?: 'openai-compatible';
   llmApiKey?: string;
   llmAccessKeyId?: string;
   llmSecretKey?: string;
@@ -103,7 +106,8 @@ const configKeySpecs = {
   'session-dir': { property: 'sessionDir', type: 'string', secret: false },
   'max-cases': { property: 'maxCases', type: 'number', secret: false },
   'llm-base-url': { property: 'llmBaseUrl', type: 'string', secret: false },
-  'llm-api-key': { property: 'llmApiKey', type: 'string', secret: true },
+  'llm-provider': { property: 'llmProvider', type: 'string', secret: false },
+  'llm-api-key': { property: 'llmApiKey', type: 'string', secret: true, visible: false, managedBy: 'llm' },
   'llm-ak': { property: 'llmAccessKeyId', type: 'string', secret: false },
   'llm-sk': { property: 'llmSecretKey', type: 'string', secret: true },
   'llm-region': { property: 'llmRegion', type: 'string', secret: false },
@@ -111,7 +115,7 @@ const configKeySpecs = {
   'llm-model': { property: 'llmModel', type: 'string', secret: false }
 } as const satisfies Record<
   string,
-  { property: keyof VikingCliConfig; type: 'string' | 'number'; secret: boolean; visible?: boolean; managedBy?: 'auth' }
+  { property: keyof VikingCliConfig; type: 'string' | 'number'; secret: boolean; visible?: boolean; managedBy?: 'auth' | 'llm' }
 >;
 
 export type CliConfigKey = keyof typeof configKeySpecs;
@@ -205,6 +209,7 @@ export function resolveCliDefaults(input: Partial<ResolvedCliDefaults> = {}, cus
   const envSk = optionalEnvString(process.env.VIKING_SK);
   const envLlmAk = optionalEnvString(process.env.VIKING_LLM_AK);
   const envLlmApiKey = optionalEnvString(process.env.VIKING_LLM_API_KEY);
+  const envLlmProvider = optionalEnvString(process.env.VIKING_LLM_PROVIDER);
   const activeProfile = resolveActiveCliProfile(stored, input.activeProfile ?? envProfile);
   const profileConfig = getCliProfile(stored, activeProfile) ?? {};
   const credentialStore = resolveCredentialStoreMode(input.credentialStore ?? envCredentialStore ?? profileConfig.credentialStore ?? stored.credentialStore);
@@ -218,8 +223,16 @@ export function resolveCliDefaults(input: Partial<ResolvedCliDefaults> = {}, cus
   } catch (error) {
     credentialLoadError = error as Error;
   }
+  let llmCredentialLookup: ReturnType<typeof loadLlmApiCredentialsSync> = {
+    backend: credentialStatus.resolvedMode
+  };
+  try {
+    llmCredentialLookup = loadLlmApiCredentialsSync(credentialStore, activeProfile);
+  } catch {
+    llmCredentialLookup = { backend: credentialStatus.resolvedMode };
+  }
   const llmAccessKeyId = input.llmAccessKeyId ?? envLlmAk ?? stored.llmAccessKeyId;
-  const llmApiKey = input.llmApiKey ?? envLlmApiKey ?? stored.llmApiKey;
+  const llmApiKey = input.llmApiKey ?? envLlmApiKey ?? llmCredentialLookup.credentials?.apiKey ?? stored.llmApiKey;
   const authSource: ResolvedCliDefaults['authSource'] =
     input.accessKeyId || input.secretKey
       ? 'flag'
@@ -269,7 +282,8 @@ export function resolveCliDefaults(input: Partial<ResolvedCliDefaults> = {}, cus
       input.llmBaseUrl ??
       optionalEnvString(process.env.VIKING_LLM_BASE_URL) ??
       stored.llmBaseUrl ??
-      (llmAccessKeyId || llmApiKey ? DEFAULT_LLM_BASE_URL : undefined),
+      (llmAccessKeyId ? DEFAULT_LLM_BASE_URL : undefined),
+    llmProvider: parseOptionalLlmProvider(input.llmProvider ?? envLlmProvider ?? stored.llmProvider ?? llmCredentialLookup.credentials?.provider),
     llmApiKey,
     llmAccessKeyId,
     llmSecretKey: input.llmSecretKey ?? optionalEnvString(process.env.VIKING_LLM_SK) ?? stored.llmSecretKey,
@@ -349,6 +363,9 @@ function parseCliConfigValue(key: CliConfigKey, rawValue: string): string | numb
   if (key === 'credentials-store') {
     return resolveCredentialStoreMode(rawValue);
   }
+  if (key === 'llm-provider') {
+    return parseOptionalLlmProvider(rawValue) ?? 'openai-compatible';
+  }
 
   if (configKeySpecs[key].type === 'number') {
     const parsed = Number.parseInt(rawValue, 10);
@@ -382,6 +399,14 @@ function optionalEnvString(rawValue: string | undefined): string | undefined {
   if (rawValue === undefined) return undefined;
   const trimmed = rawValue.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function parseOptionalLlmProvider(rawValue: string | undefined): 'openai-compatible' | undefined {
+  if (!rawValue) return undefined;
+  const normalized = rawValue.trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (normalized === 'openai-compatible') return 'openai-compatible';
+  throw new Error(`Invalid LLM provider: ${rawValue}. First version supports only openai-compatible.`);
 }
 
 function maskSecret(value: string): string {

@@ -6,6 +6,7 @@ import { renderHelpLines, type HelpLine } from './help-utils';
 const CORE_COMMANDS: HelpLine[] = [
   { text: 'skill              Manage installable Viking skills' },
   { text: 'auth               Manage Viking credentials' },
+  { text: 'llm                Manage LLM credentials for tuning' },
   { text: 'doctor             Check auth, config, and local dependencies' }
 ];
 
@@ -32,7 +33,8 @@ export function printRootHelp(): void {
     'vs app --help',
     'vs item --help',
     'vs skill --help',
-    'vs auth --help'
+    'vs auth --help',
+    'vs llm --help'
   ];
 
   console.log(`SearchCLI
@@ -46,6 +48,7 @@ QUICK START
   Sign in and verify access
     vs auth import-env
     vs auth login
+    vs llm login
     vs doctor
 
   Create or activate an app from item data

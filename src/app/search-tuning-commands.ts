@@ -81,6 +81,9 @@ export interface SearchTuneLlmCheckOptions extends SearchTuneServiceOptions {
   live?: boolean;
 }
 
+const LLM_CONFIG_GUIDANCE =
+  'LLM is not configured. Run `vs llm login` to store an OpenAI-compatible API key securely, or set VIKING_LLM_BASE_URL, VIKING_LLM_API_KEY, and VIKING_LLM_MODEL in a real terminal and run `vs llm import-env`.';
+
 export async function runSearchTuneLlmCheckCommand(options: SearchTuneLlmCheckOptions): Promise<void> {
   const llmConfig = resolveLlmClientConfig({
     timeoutMs: options.timeoutMs
@@ -88,7 +91,7 @@ export async function runSearchTuneLlmCheckCommand(options: SearchTuneLlmCheckOp
   if (!llmConfig) {
     await printOutput({
       ok: false,
-      detail: 'LLM is not configured. Set VIKING_LLM_BASE_URL, VIKING_LLM_API_KEY, and VIKING_LLM_MODEL, or configure Ark AK/SK.'
+      detail: LLM_CONFIG_GUIDANCE
     });
     return;
   }
@@ -124,9 +127,7 @@ export async function runSearchTuneRunCommand(options: SearchTuneRunOptions): Pr
       }) ?? undefined)
     : undefined;
   if (!llmConfig && needsLlmBeforeRun) {
-    throw new Error(
-      'LLM is not configured. Run `vs search tune llm-check` for details, then set VIKING_LLM_BASE_URL, VIKING_LLM_API_KEY, and VIKING_LLM_MODEL.'
-    );
+    throw new Error(`${LLM_CONFIG_GUIDANCE} Run \`vs search tune llm-check\` for details.`);
   }
   const maxLabelFailureRate = options.maxLabelFailureRate ?? 0.01;
   if (!Number.isFinite(maxLabelFailureRate) || maxLabelFailureRate < 0 || maxLabelFailureRate > 1) {
@@ -235,9 +236,7 @@ export async function runSearchTuneQueryGenerateCommand(options: SearchTuneQuery
     timeoutMs: effectiveTimeoutMs
   });
   if (!llmConfig) {
-    throw new Error(
-      'LLM is not configured. Run `vs search tune llm-check` for details, then set VIKING_LLM_BASE_URL, VIKING_LLM_API_KEY, and VIKING_LLM_MODEL.'
-    );
+    throw new Error(`${LLM_CONFIG_GUIDANCE} Run \`vs search tune llm-check\` for details.`);
   }
 
   const serviceConfig = resolveServiceConfig({

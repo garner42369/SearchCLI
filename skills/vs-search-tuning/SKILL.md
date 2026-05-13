@@ -5,7 +5,7 @@ category: search
 applies_to: codex, agents, external-agent
 requires_cli: ">=0.1.0"
 keywords: search tuning, search evaluation, llm judge, ndcg, query generation, similarity tuning
-commands: search tune llm-check, search tune query-generate, search tune plan, search tune run, search tune report, search tune apply, app status, doctor
+commands: llm login, llm import-env, llm status, search tune llm-check, search tune query-generate, search tune plan, search tune run, search tune report, search tune apply, app status, doctor
 ---
 
 # Viking Search Tuning
@@ -21,12 +21,13 @@ This first version is for text-query similarity only. It fixes `mode=UserDefined
 - an `application-id` is available
 - a `dataset-id` is preferred; if omitted, the CLI can try to infer a unique search dataset from the application
 - Viking auth is configured with `vs auth status`
-- LLM config is available to the CLI through `VIKING_LLM_BASE_URL`, `VIKING_LLM_API_KEY` or `VIKING_LLM_AK/SK`, and `VIKING_LLM_MODEL` when generating queries or using LLM relevance labels
+- LLM config is available through `vs llm login`, `vs llm import-env`, or `VIKING_LLM_BASE_URL` / `VIKING_LLM_API_KEY` / `VIKING_LLM_MODEL` when generating queries or using LLM relevance labels
 - a query file with `sourceItemIds` can be evaluated with `--label-source source-item` for a fast first-pass silver-label run without LLM relevance judging
 - the user understands that LLM relevance labels are silver labels and should be reviewed before high-risk production changes
 
 ## Commands
 
+- `llm login` / `llm import-env` / `llm status`: configure and verify OpenAI-compatible LLM credentials without exposing API keys in chat or plain config
 - `search tune llm-check`: verify CLI-managed LLM configuration
 - `search tune query-generate`: generate a reusable synthetic query set from paged dataset samples with batched concurrent LLM calls when the user has no query set
 - `search tune plan`: show query source, candidate strategies, estimated requests/labels, parameter coverage, source-item coverage, warnings, and suggested first-pass size before running
@@ -42,6 +43,10 @@ This first version is for text-query similarity only. It fixes `mode=UserDefined
    - `vs auth status --json`
    - `vs doctor --json`
    - `vs search tune llm-check --json`
+   If LLM check fails and LLM query generation or LLM judging is needed, configure LLM first:
+   - interactive secure setup: `vs llm login`
+   - from existing terminal env: `vs llm import-env`
+   - verify secret source: `vs llm status --json`
 3. Check that the application is ready:
    - `vs app status --application-id <id> --json`
 4. Confirm the tuning boundary with the user:
@@ -92,6 +97,7 @@ This first version is for text-query similarity only. It fixes `mode=UserDefined
 - Do not let `search tune run` auto-generate queries during agent-led tuning. If the user has no query set, run `search tune query-generate`, show query samples, and then pass the generated `queryFile` to `plan` and `run`.
 - Do not continue from a generated query set when `query-generate` returns `ok=false`; inspect `warnings` and retry generation before asking the user.
 - Do not run LLM query generation or LLM judging until `search tune llm-check` succeeds. A `--label-source source-item` run may skip LLM judging only when the query file already contains usable `sourceItemIds`.
+- Do not ask the user to paste LLM API keys into chat. Use `vs llm login` in a real terminal, or ask the user to set `VIKING_LLM_BASE_URL`, `VIKING_LLM_API_KEY`, and `VIKING_LLM_MODEL` in that terminal and then run `vs llm import-env`.
 - Do not present the recommendation as an online change. `search tune apply` creates a new candidate scene only; it does not switch the default entrance.
 - If a tuning process is interrupted, prefer `--resume-run-id` over starting a duplicate run with the same query set and strategy space.
 - Do not tune or attribute changes to rerank, personalization, hotness, boost/bury, sort rules, serving controls, or business rules in this first-version workflow.

@@ -46,6 +46,8 @@ async function main() {
   await runTest('item-plan', testItemPlan);
   await runTest('high-risk-guards', testHighRiskGuards);
   await runTest('auth-import-env', testAuthImportEnv);
+  await runTest('llm-openai-compatible-credential-flow', testLlmOpenAiCompatibleCredentialFlow);
+  await runTest('search-tune-llm-check-guidance', testSearchTuneLlmCheckGuidance);
 
   if (live) {
     await runSkipped('live-smoke', 'Live acceptance is intentionally excluded from the public repository.');
@@ -115,6 +117,7 @@ async function testRootHelp() {
   const { stdout } = await runCli(['--help']);
   assert.match(stdout, /SearchCLI/);
   assert.match(stdout, /\bitem\b/);
+  assert.match(stdout, /\bllm\b/);
   assert.doesNotMatch(stdout, /\bchat-mode\b/);
   assert.doesNotMatch(stdout, /\bchat-skill\b/);
   return `${command.prefix} --help`;
@@ -860,6 +863,111 @@ async function testAuthImportEnv() {
   assert.equal(payload.activeProfile, 'acceptance');
   assert.equal(payload.loggedIn, true);
   return `${command.prefix} auth import-env --profile acceptance --json`;
+}
+
+async function testLlmOpenAiCompatibleCredentialFlow() {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'viking-acceptance-llm-'));
+  const homeDir = path.join(workspace, 'home');
+  fs.mkdirSync(homeDir, { recursive: true });
+  const serverState = { llmRequests: 0 };
+  const server = await startLlmCheckMockServer(serverState);
+
+  try {
+    const importResult = await runCli(['llm', 'import-env', '--profile', 'acceptance', '--store', 'file', '--json'], {
+      env: {
+        HOME: homeDir,
+        VIKING_LLM_BASE_URL: server.baseUrl,
+        VIKING_LLM_API_KEY: 'acceptance-llm-key',
+        VIKING_LLM_MODEL: 'mock-model'
+      }
+    });
+    const imported = JSON.parse(importResult.stdout);
+    assert.equal(imported.ok, true);
+    assert.equal(imported.provider, 'openai-compatible');
+    assert.equal(imported.apiKeySource, 'secure-store');
+    assert.equal(imported.credentialStore.savedBackend, 'file');
+
+    const configPath = path.join(homeDir, '.viking', 'config.json');
+    const configText = fs.readFileSync(configPath, 'utf8');
+    assert.match(configText, /mock-model/);
+    assert.doesNotMatch(configText, /acceptance-llm-key/);
+
+    const statusResult = await runCli(['llm', 'status', '--profile', 'acceptance', '--json'], {
+      env: emptyLlmEnv(homeDir)
+    });
+    const status = JSON.parse(statusResult.stdout);
+    assert.equal(status.configured, true);
+    assert.equal(status.provider, 'openai-compatible');
+    assert.equal(status.baseUrl, server.baseUrl);
+    assert.equal(status.model, 'mock-model');
+    assert.equal(status.apiKeyConfigured, true);
+    assert.equal(status.apiKeySource, 'secure-store');
+
+    const checkResult = await runCli(['search', 'tune', 'llm-check', '--live', '--json'], {
+      env: emptyLlmEnv(homeDir)
+    });
+    const check = JSON.parse(checkResult.stdout);
+    assert.equal(check.ok, true);
+    assert.equal(check.auth, 'api-key');
+    assert.match(String(check.live), /"ok":true/);
+    assert.equal(serverState.llmRequests, 1);
+    return `${command.prefix} llm import-env --profile acceptance --store file --json`;
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+}
+
+async function testSearchTuneLlmCheckGuidance() {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'viking-acceptance-llm-guidance-'));
+  const homeDir = path.join(workspace, 'home');
+  fs.mkdirSync(homeDir, { recursive: true });
+  const { stdout } = await runCli(['search', 'tune', 'llm-check', '--json'], {
+    env: emptyLlmEnv(homeDir)
+  });
+  const payload = JSON.parse(stdout);
+  assert.equal(payload.ok, false);
+  assert.match(payload.detail, /vs llm login/);
+  assert.match(payload.detail, /VIKING_LLM_BASE_URL/);
+  assert.match(payload.detail, /VIKING_LLM_API_KEY/);
+  assert.match(payload.detail, /VIKING_LLM_MODEL/);
+  return `${command.prefix} search tune llm-check --json`;
+}
+
+function emptyLlmEnv(homeDir) {
+  return {
+    HOME: homeDir,
+    VIKING_LLM_BASE_URL: '',
+    VIKING_LLM_API_KEY: '',
+    VIKING_LLM_AK: '',
+    VIKING_LLM_SK: '',
+    VIKING_LLM_MODEL: ''
+  };
+}
+
+async function startLlmCheckMockServer(state) {
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk;
+    });
+    req.on('end', () => {
+      res.setHeader('content-type', 'application/json');
+      if (req.url.endsWith('/chat/completions')) {
+        state.llmRequests += 1;
+        res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ok: true }) } }] }));
+        return;
+      }
+      res.statusCode = 404;
+      res.end(JSON.stringify({ error: `unexpected path: ${req.url}` }));
+    });
+  });
+
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    close: callback => server.close(callback)
+  };
 }
 
 function writeReport() {
