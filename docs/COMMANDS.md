@@ -109,11 +109,11 @@ SearchCLI is an interactive AI search command-line tool. Below is the list of cu
     *   Parameters: `[service flags]`
 
 ### `search` - Search Runtime and Scenes
-*   `vs search run --application-id <id> --query <text>`
-    *   Usage: `vs search run --application-id <id> [--scene-id <id>] [--dataset-id <id>] --query <text> [--page-size <n>] [service flags]`
-    *   Description: run a runtime search request against an application scene; `--dataset-id` is usually optional when the app is bound to exactly one dataset
+*   `vs search run --application-id <id> --scene-id <id> --query <text>`
+    *   Usage: `vs search run --application-id <id> --scene-id <id> [--dataset-id <id>] --query <text> [--page-size <n>] [service flags]`
+    *   Description: run a normal runtime search request against an explicit application scene; `--dataset-id` is usually optional when the app is bound to exactly one dataset
     *   Key flags: `--application-id`, `--scene-id`, `--dataset-id`, `--query`, `--page-size`
-    *   Examples: `vs search run --application-id 123 --query "wireless headphones"`; `vs search run --application-id 123 --scene-id default-search --query "running shoes" --page-size 5`
+    *   Examples: `vs search run --application-id 123 --scene-id default-search --query "wireless headphones"`; `vs search run --application-id 123 --scene-id default-search --query "running shoes" --page-size 5`
 *   `vs search scene create --application-id <id> --name <name>`
     *   Usage: `vs search scene create --application-id <id> --name <name> [--description <text>] [service flags]`
     *   Usage: `vs search scene create --application-id <id> --data @payload.json [service flags]`
@@ -148,6 +148,24 @@ SearchCLI is an interactive AI search command-line tool. Below is the list of cu
     *   Description: delete a search scene from an application; inspect the scene first with `scene get` or `scene list` when the target `scene-id` is not fully confirmed
     *   Key flags: `--application-id`, `--scene-id`, `--data`
     *   Examples: `vs search scene delete --application-id 123 --scene-id abc`; `vs search scene delete --application-id 123 --scene-id abc --format json`; `vs search scene delete --application-id 123 --scene-id abc --data @payload.json`
+*   `vs search tune llm-check`
+    *   Usage: `vs search tune llm-check [--live] [service flags]`
+    *   Description: check whether CLI-managed LLM configuration is available for automated search tuning
+*   `vs search tune plan --application-id <id>`
+    *   Usage: `vs search tune plan --application-id <id> [--dataset-id <id>] [--queries <file>] [--profile similarity-only] [--query-count <n>] [--top-k <n>] [--max-strategies <n>] [service flags]`
+    *   Description: plan first-version text-query similarity evaluation without calling search or LLM services; prints query source, request/label estimate, fixed `mode=UserDefined`, tuned parameter list, strategy coverage, source-item coverage, warnings, and a suggested smaller first-pass shape
+*   `vs search tune query-generate --application-id <id>`
+    *   Usage: `vs search tune query-generate --application-id <id> [--dataset-id <id>] [--query-count <n>] [--min-query-count <n>] [--sample-size <n>] [--query-batch-size <n>] [--llm-concurrency <n>] [--output-dir <dir>] [service flags]`
+    *   Description: generate a reusable synthetic JSONL query set from paged dataset samples with batched concurrent LLM calls; output includes requested/actual counts, shortfall, warnings, and generation performance
+*   `vs search tune run --application-id <id>`
+    *   Usage: `vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--label-source <llm|source-item|auto>] [--profile similarity-only] [--query-count <n>] [--top-k <n>] [--max-strategies <n>] [--search-concurrency <n>] [--llm-concurrency <n>] [--llm-retries <n>] [--max-label-failure-rate <ratio>] [--verbose] [--timeout-ms <ms>] [--output-dir <dir>] [service flags]`
+    *   Description: run first-version text-query similarity evaluation and tuning with loaded/generated queries, candidate searches, and either LLM pointwise labels or fast `sourceItemIds` labels; request timeout defaults to 120000ms, search requests default to 18-way concurrency, and LLM judgements default to a 100-worker pool with retry/failure-threshold controls; writes `run-state.json`, `rankings.jsonl`, `labels-used.jsonl`, `label-failures.jsonl`, `partial-metrics.json`, and `performance-summary.json` during execution so interrupted runs can be resumed and bottlenecks can be inspected
+*   `vs search tune apply --application-id <id> --run-id <id>`
+    *   Usage: `vs search tune apply --application-id <id> --run-id <id> [--scene-name <name>] [--scene-description <text>] [--dry-run | --confirm-create-scene] [--output-dir <dir>] [service flags]`
+    *   Description: create a new search scene from a completed tuning report recommendation; request-only params such as `query_keyword_match_percent` are returned as `unappliedRequestParams`
+*   `vs search tune report --run-id <id>`
+    *   Usage: `vs search tune report --run-id <id> [--output-dir <dir>] [service flags]`
+    *   Description: read a previous search tuning report
 
 ### `chat` - Conversational Search
 *   `vs chat run --application-id <id>`

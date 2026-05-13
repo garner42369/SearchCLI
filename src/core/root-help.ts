@@ -54,8 +54,16 @@ QUICK START
     vs item apply --plan-dir ./.viking/item-plans/<plan> --confirm-review --wait-ready --run-trials
 
   Try one search request
-    vs search run --application-id <app> --query "wireless headphones"
+    vs search run --application-id <app> --scene-id <scene> --query "wireless headphones"
     if the app has multiple datasets, add --dataset-id <dataset>
+
+  Run first-version search tuning
+    vs search tune llm-check
+    vs search tune query-generate --application-id <app> --dataset-id <dataset>
+    vs search tune plan --application-id <app> --dataset-id <dataset> --queries ./queries.jsonl
+    vs search tune run --application-id <app> --dataset-id <dataset> --profile similarity-only
+    vs search tune run --application-id <app> --resume-run-id <run-id>
+    vs search tune apply --application-id <app> --run-id <run-id> --dry-run
 
 CORE
   ${coreCommands}

@@ -57,6 +57,7 @@ vs auth status --json
 vs doctor --json
 vs skill list
 vs skill show --name vs-item-onboarding
+vs skill show --name vs-search-tuning
 ```
 
 ## 4. Run The First Onboarding Flow
@@ -120,3 +121,29 @@ vs dataset ingest --dataset-id <dataset-id> --fields @<normalized-items-artifact
 For video dataset-only provisioning, prefer `dataset-create.json` so the create request includes `DataFieldConfig`; `--schema @schema.json` alone can fail with `MissingParameter.DefaultFieldStrategy`.
 
 If the data looks like video content (for example `video_url`, `duration`, `content_type=video`, `parent_content_id`, or `sequence_index`) but the user did not explicitly say `item` or `video`, ask a clarifying question before planning or applying.
+
+## 5. Run Search Tuning
+
+When the user asks for search tuning, ask first whether they have a tuning query set. Use real online queries when available; otherwise tell the user the CLI can generate synthetic queries from dataset samples.
+
+```bash
+vs search tune llm-check --json
+vs search tune query-generate --application-id <app> --dataset-id <dataset> --query-count 100 --sample-size 200 --query-batch-size 10 --llm-concurrency 100 --timeout-ms 120000 --json
+vs search tune plan --application-id <app> --dataset-id <dataset> --queries <queryFile> --json
+vs search tune run --application-id <app> --dataset-id <dataset> --queries <queryFile> --search-concurrency 18 --llm-concurrency 100 --timeout-ms 120000
+vs search tune report --run-id <run-id> --json
+vs search tune apply --application-id <app> --run-id <run-id> --dry-run
+vs search tune apply --application-id <app> --run-id <run-id> --confirm-create-scene
+```
+
+The first version fixes `mode=UserDefined` and tunes only user-defined recall mode, recall weights, keyword match ratio, and max retrieved count. `search tune apply` creates a new candidate scene; it does not switch the default entrance.
+If the query file has `sourceItemIds`, `search tune plan` reports source-item coverage and a suggested first-pass shape. For a fast pruning pass, run `search tune run ... --label-source source-item --json`; this does not call the LLM judge and should be presented as source-item silver-label evaluation, not final human-grade relevance.
+For LLM judging, use `--llm-retries`, `--max-label-failure-rate`, and `--verbose` when diagnosing provider long tails.
+Use the emitted `performance-summary.json` to identify whether time is dominated by search requests, LLM judging, metrics, artifact writes, cache misses, or label failures. LLM judging uses worker-pool scheduling; slow LLM requests should not block checkpointing of labels that already returned.
+For generated query sets, inspect `requestedQueryCount`, `actualQueryCount`, `shortfall`, and `warnings`; do not continue to `plan` or `run` when `ok=false`.
+
+If a run is interrupted, inspect `.viking/search-tuning/runs/<run-id>/run-state.json` and resume with:
+
+```bash
+vs search tune run --application-id <app> --resume-run-id <run-id> --timeout-ms 120000
+```

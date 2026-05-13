@@ -187,6 +187,7 @@ export interface SearchDynamic {
   enable_rerank_with_hot?: boolean;
   rerank_model?: string;
   rerank_doubao_config?: RerankDoubaoConfig;
+  user_defined_recall_mode?: UserDefinedRecallModeName | UserDefinedRecallModeValue;
 }
 
 export interface SearchCase {
@@ -207,6 +208,7 @@ export interface SearchCase {
   output_fields?: string[];
   conditional_boost?: unknown[];
   disable_personalize?: boolean;
+  query_keyword_match_percent?: number;
   expected_ids?: string[];
   relevance_tiers?: string[][];
   notes?: string;

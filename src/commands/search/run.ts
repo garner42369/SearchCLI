@@ -6,17 +6,17 @@ import { runSearchRunCommand } from '../../app/product-commands';
 import { serviceFlags } from '../../command-support/service-flags';
 
 export default class SearchRun extends Command {
-  static override description = 'Run the online search API. If the app has exactly one search dataset, the CLI infers it; otherwise pass --dataset-id.';
+  static override description = 'Run the online search API against an explicit search scene.';
 
   static override examples = [
     '<%= config.bin %> search run --application-id 123 --scene-id sceneA --query "wireless headphones" --dataset-id 456',
-    '<%= config.bin %> search run --application-id 123 --query "wireless headphones"'
+    '<%= config.bin %> search run --application-id 123 --scene-id sceneA --query "running shoes"'
   ];
 
   static override flags = {
     ...serviceFlags,
     'application-id': Flags.string({ required: true }),
-    'scene-id': Flags.string({ description: 'Optional search scene ID.' }),
+    'scene-id': Flags.string({ required: true, description: 'Search scene ID.' }),
     'dataset-id': Flags.string({ description: 'Optional dataset ID.' }),
     query: Flags.string({ description: 'Search query.' }),
     'page-size': Flags.integer({ description: 'Number of search results per page.' })

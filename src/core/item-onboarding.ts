@@ -386,7 +386,6 @@ export async function buildItemProfile(options: ItemProfileCommandOptions): Prom
 
 export async function buildItemPlan(options: ItemPlanOptions): Promise<ItemPlanResult> {
   const datasetType = options.datasetType ?? 'item';
-  console.log('>>> buildItemPlan received datasetType:', datasetType);
   const profile = await buildItemProfile({ file: options.file, datasetType: options.datasetType });
   const planDir =
     options.outputDir

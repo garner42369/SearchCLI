@@ -36,6 +36,12 @@
       ]
     },
     {
+      "name": "vs-search-tuning",
+      "files": [
+        "vs-search-tuning/SKILL.md"
+      ]
+    },
+    {
       "name": "vs-shared",
       "files": [
         "vs-shared/SKILL.md"

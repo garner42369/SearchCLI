@@ -6,6 +6,7 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
@@ -29,6 +30,15 @@ async function main() {
   await runTest('root-help', testRootHelp);
   await runTest('skill-list', testSkillList);
   await runTest('skill-show', testSkillShow);
+  await runTest('search-tune-help', testSearchTuneHelp);
+  await runTest('search-run-requires-scene-help', testSearchRunRequiresSceneHelp);
+  await runTest('search-tune-plan', testSearchTunePlan);
+  await runTest('search-tune-query-generate-mock', testSearchTuneQueryGenerateMock);
+  await runTest('search-tune-run-worker-pool-mock', testSearchTuneRunWorkerPoolMock);
+  await runTest('search-tune-run-source-item-mock', testSearchTuneRunSourceItemMock);
+  await runTest('search-tune-run-label-failure-threshold-mock', testSearchTuneRunLabelFailureThresholdMock);
+  await runTest('search-tune-apply-dry-run', testSearchTuneApplyDryRun);
+  await runTest('search-tune-run-help', testSearchTuneRunHelp);
   await runTest('app-list-help', testAppListHelp);
   await runTest('dataset-list-help', testDatasetListHelp);
   await runTest('config-summary-help', testConfigSummaryHelp);
@@ -115,10 +125,13 @@ async function testSkillList() {
   const payload = JSON.parse(stdout);
   const names = payload.skills.map(skill => skill.name).sort();
   assert.deepEqual(names, [
+    'vs-alias-mapping',
+    'vs-app-dataset-bind',
     'vs-chat',
     'vs-item-onboarding',
     'vs-recommend',
     'vs-search',
+    'vs-search-tuning',
     'vs-shared'
   ]);
   return `${command.prefix} skill list --json`;
@@ -128,7 +141,7 @@ async function testSkillShow() {
   const { stdout } = await runCli(['skill', 'show', '--name', 'vs-item-onboarding', '--json']);
   const payload = JSON.parse(stdout);
   assert.equal(payload.name, 'vs-item-onboarding');
-  assert.match(payload.description, /item-level search onboarding/i);
+  assert.match(payload.description, /item-level onboarding/i);
   return `${command.prefix} skill show --name vs-item-onboarding --json`;
 }
 
@@ -136,7 +149,7 @@ async function testDatasetListHelp() {
   const { stdout } = await runCli(['dataset', 'list', '--help']);
   assert.match(stdout, /--type/);
   assert.match(stdout, /--full/);
-  assert.match(stdout, /dataset list \[--type <type> --name <text> --application-id <id> --full\]/i);
+  assert.match(stdout, /dataset list \[--type <type>\] \[--name <text>\] \[--application-id <id>\] \[--full\]/i);
   return `${command.prefix} dataset list --help`;
 }
 
@@ -146,6 +159,598 @@ async function testAppListHelp() {
   return `${command.prefix} app --help`;
 }
 
+async function testSearchTuneHelp() {
+  const { stdout } = await runCli(['search', '--help']);
+  assert.match(stdout, /search tune llm-check/i);
+  assert.match(stdout, /search tune plan/i);
+  assert.match(stdout, /search tune query-generate/i);
+  assert.match(stdout, /search tune run/i);
+  assert.match(stdout, /search tune apply/i);
+  assert.match(stdout, /search tune report/i);
+  return `${command.prefix} search --help`;
+}
+
+async function testSearchRunRequiresSceneHelp() {
+  const { stdout } = await runCli(['search', 'run', '--help']);
+  assert.match(stdout, /--scene-id <id>/);
+  assert.doesNotMatch(stdout, /\[--scene-id <id>\]/);
+  assert.doesNotMatch(stdout, /search run --application-id 123 --query/);
+  assert.match(stdout, /search run --application-id 123 --scene-id/);
+  return `${command.prefix} search run --help`;
+}
+
+async function testSearchTunePlan() {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'viking-acceptance-tune-plan-'));
+  const queriesPath = path.join(workspace, 'queries.jsonl');
+  fs.writeFileSync(
+    queriesPath,
+    [
+      JSON.stringify({ id: 'q1', text: '对象存储' }),
+      JSON.stringify({ id: 'q2', text: 'ECS API', sourceItemIds: ['ecs-api-doc'] }),
+      JSON.stringify({ id: 'q3', query: { text: '如何创建云服务器实例' } })
+    ].join('\n')
+  );
+
+  const { stdout } = await runCli([
+    'search',
+    'tune',
+    'plan',
+    '--application-id',
+    'app-1',
+    '--dataset-id',
+    'ds-1',
+    '--queries',
+    queriesPath,
+    '--query-count',
+    '2',
+    '--top-k',
+    '5',
+    '--max-strategies',
+    '8',
+    '--json'
+  ]);
+  const payload = JSON.parse(stdout);
+  assert.equal(payload.profile, 'similarity-only');
+  assert.equal(payload.querySource, 'user-provided');
+  assert.equal(payload.estimated.queryCount, 2);
+  assert.equal(payload.estimated.strategyCount, 8);
+  assert.equal(payload.estimated.searchRequests, 16);
+  assert.equal(payload.estimated.maxPointwiseJudgements, 80);
+  assert.equal(payload.estimated.sourceItemQueryCount, 1);
+  assert.equal(payload.estimated.sourceItemQueryCoverage, 0.5);
+  assert.equal(payload.suggestedFirstPass.queryCount, 2);
+  assert.equal(payload.suggestedFirstPass.strategyCount, 8);
+  assert.equal(payload.suggestedFirstPass.topK, 5);
+  assert.deepEqual(payload.fixed.mode, 'UserDefined');
+  assert.ok(payload.tunedParameters.includes('user_defined_recall_mode'));
+  assert.ok(payload.tunedParameters.includes('dense_weight'));
+  assert.ok(payload.tunedParameters.includes('query_keyword_match_percent'));
+  assert.ok(payload.tunedParameters.includes('max_retrieved_num'));
+  assert.ok(payload.excludedParameters.includes('mode'));
+  assert.deepEqual(payload.coverage.mode.values, ['UserDefined']);
+  assert.ok(payload.coverage.user_defined_recall_mode.values.includes('KeywordOnly'));
+  assert.ok(payload.coverage.user_defined_recall_mode.values.includes('SemanticOnly'));
+  assert.ok(payload.coverage.user_defined_recall_mode.values.includes('KeywordSemantic'));
+  return `${command.prefix} search tune plan --application-id app-1 --dataset-id ds-1 --queries ${queriesPath} --json`;
+}
+
+async function testSearchTuneRunHelp() {
+  const { stdout } = await runCli(['search', 'tune', 'run', '--help']);
+  assert.match(stdout, /--search-concurrency/);
+  assert.match(stdout, /Default: 18/);
+  assert.match(stdout, /--llm-concurrency/);
+  assert.match(stdout, /Default: 100/);
+  assert.doesNotMatch(stdout, /--scene-id/);
+  assert.match(stdout, /--resume-run-id/);
+  assert.match(stdout, /--label-source/);
+  assert.match(stdout, /--llm-retries/);
+  assert.match(stdout, /--max-label-failure-rate/);
+  assert.match(stdout, /--verbose/);
+  assert.match(stdout, /run-state\.json/);
+  assert.match(stdout, /partial-metrics\.json/);
+  assert.match(stdout, /performance-summary\.json/);
+  return `${command.prefix} search tune run --help`;
+}
+
+async function testSearchTuneQueryGenerateMock() {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'viking-acceptance-query-generate-'));
+  const serverState = {
+    dataListRequests: 0,
+    llmRequests: 0
+  };
+  const server = await startQueryGenerateMockServer(serverState);
+  try {
+    const { stdout } = await runCli(
+      [
+        'search',
+        'tune',
+        'query-generate',
+        '--application-id',
+        'app-1',
+        '--dataset-id',
+        'ds-1',
+        '--query-count',
+        '6',
+        '--min-query-count',
+        '6',
+        '--query-batch-size',
+        '2',
+        '--sample-size',
+        '250',
+        '--llm-concurrency',
+        '2',
+        '--timeout-ms',
+        '60000',
+        '--output-dir',
+        workspace,
+        '--base-url',
+        server.baseUrl,
+        '--ak',
+        'ak',
+        '--sk',
+        'sk',
+        '--json'
+      ],
+      {
+        env: {
+          VIKING_LLM_BASE_URL: server.baseUrl,
+          VIKING_LLM_API_KEY: 'llm-key',
+          VIKING_LLM_MODEL: 'mock-model'
+        }
+      }
+    );
+    const payload = JSON.parse(stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.requestedQueryCount, 6);
+    assert.equal(payload.actualQueryCount, 6);
+    assert.equal(payload.shortfall, 0);
+    assert.equal(payload.queryCount, 6);
+    assert.equal(payload.sampleItemCount, 250);
+    assert.equal(payload.llmRequestCount, 3);
+    assert.ok(payload.performance.durationMs >= 0);
+    assert.ok(payload.performance.llmWallMs >= 0);
+    assert.deepEqual(payload.warnings, []);
+    const queryLines = fs.readFileSync(payload.queryFile, 'utf8').trim().split('\n');
+    assert.equal(queryLines.length, 6);
+    assert.equal(serverState.llmRequests, 3);
+    assert.ok(serverState.dataListRequests >= 3);
+    return `${command.prefix} search tune query-generate --application-id app-1 --dataset-id ds-1 --query-count 6 --json`;
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+}
+
+async function testSearchTuneRunWorkerPoolMock() {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'viking-acceptance-tune-run-'));
+  const queriesPath = path.join(workspace, 'queries.jsonl');
+  fs.writeFileSync(
+    queriesPath,
+    [
+      JSON.stringify({ id: 'q1', text: 'training shirt', intent: 'Find a training shirt' }),
+      JSON.stringify({ id: 'q2', text: 'golf polo', intent: 'Find a golf polo' })
+    ].join('\n')
+  );
+  const serverState = {
+    searchRequests: 0,
+    llmRequests: 0
+  };
+  const server = await startTuneRunWorkerPoolMockServer(serverState);
+  try {
+    const startedAt = Date.now();
+    const { stdout } = await runCli(
+      [
+        'search',
+        'tune',
+        'run',
+        '--application-id',
+        'app-1',
+        '--dataset-id',
+        'ds-1',
+        '--queries',
+        queriesPath,
+        '--query-count',
+        '2',
+        '--top-k',
+        '3',
+        '--max-strategies',
+        '1',
+        '--search-concurrency',
+        '1',
+        '--llm-concurrency',
+        '3',
+        '--timeout-ms',
+        '5000',
+        '--output-dir',
+        workspace,
+        '--base-url',
+        server.baseUrl,
+        '--ak',
+        'ak',
+        '--sk',
+        'sk',
+        '--json'
+      ],
+      {
+        env: {
+          VIKING_LLM_BASE_URL: server.baseUrl,
+          VIKING_LLM_API_KEY: 'llm-key',
+          VIKING_LLM_MODEL: 'mock-model'
+        }
+      }
+    );
+    const wallMs = Date.now() - startedAt;
+    const payload = JSON.parse(stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(serverState.searchRequests, 2);
+    assert.equal(serverState.llmRequests, 6);
+    assert.equal(payload.performance.labelRequestsCompleted, 6);
+    assert.equal(payload.performance.labelCacheMisses, 6);
+    assert.equal(payload.performance.labelRequestsFailed, 0);
+    assert.ok(payload.performance.llmLatencyP50Ms >= 0);
+    assert.ok(payload.performance.llmLatencyP95Ms >= payload.performance.llmLatencyP50Ms);
+    assert.ok(payload.performance.llmWallMs < 900, `expected worker-pool LLM wall < 900ms, got ${payload.performance.llmWallMs}`);
+    assert.ok(wallMs < 2000, `expected tune run wall < 2000ms, got ${wallMs}`);
+    const state = JSON.parse(fs.readFileSync(payload.runState, 'utf8'));
+    assert.equal(state.status, 'completed');
+    assert.match(fs.readFileSync(payload.report, 'utf8'), /Recommended strategy/i);
+    return `${command.prefix} search tune run --application-id app-1 --dataset-id ds-1 --queries ${queriesPath} --json`;
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+}
+
+async function testSearchTuneRunSourceItemMock() {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'viking-acceptance-tune-source-item-'));
+  const queriesPath = path.join(workspace, 'queries.jsonl');
+  fs.writeFileSync(
+    queriesPath,
+    [
+      JSON.stringify({
+        id: 'q1',
+        text: 'training shirt',
+        intent: 'Find a training shirt',
+        sourceItemIds: ['training-shirt-item-1']
+      }),
+      JSON.stringify({
+        id: 'q2',
+        text: 'golf polo',
+        intent: 'Find a golf polo',
+        sourceItemIds: ['golf-polo-item-1']
+      })
+    ].join('\n')
+  );
+  const serverState = {
+    searchRequests: 0,
+    llmRequests: 0
+  };
+  const server = await startTuneRunWorkerPoolMockServer(serverState);
+  try {
+    const { stdout, stderr } = await runCli(
+      [
+        'search',
+        'tune',
+        'run',
+        '--application-id',
+        'app-1',
+        '--dataset-id',
+        'ds-1',
+        '--queries',
+        queriesPath,
+        '--query-count',
+        '2',
+        '--top-k',
+        '3',
+        '--max-strategies',
+        '1',
+        '--label-source',
+        'source-item',
+        '--output-dir',
+        workspace,
+        '--base-url',
+        server.baseUrl,
+        '--ak',
+        'ak',
+        '--sk',
+        'sk',
+        '--json'
+      ],
+      {
+        env: {
+          VIKING_LLM_BASE_URL: '',
+          VIKING_LLM_API_KEY: '',
+          VIKING_LLM_MODEL: ''
+        }
+      }
+    );
+    const payload = JSON.parse(stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.labelSource, 'source-item');
+    assert.equal(payload.labelFailureCount, 0);
+    assert.equal(serverState.searchRequests, 2);
+    assert.equal(serverState.llmRequests, 0);
+    assert.equal(payload.performance.labelRequestsCompleted, 0);
+    assert.equal(payload.labelCount, 6);
+    assert.doesNotMatch(stderr, /Label available for query/);
+    const recommendation = JSON.parse(fs.readFileSync(payload.recommendation, 'utf8'));
+    assert.equal(recommendation.metrics.averageMrrAt10, 1);
+    return `${command.prefix} search tune run --application-id app-1 --dataset-id ds-1 --queries ${queriesPath} --label-source source-item --json`;
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+}
+
+async function testSearchTuneRunLabelFailureThresholdMock() {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'viking-acceptance-tune-label-failure-'));
+  const queriesPath = path.join(workspace, 'queries.jsonl');
+  fs.writeFileSync(
+    queriesPath,
+    [
+      JSON.stringify({ id: 'q1', text: 'training shirt', intent: 'Find a training shirt' }),
+      JSON.stringify({ id: 'q2', text: 'golf polo', intent: 'Find a golf polo' })
+    ].join('\n')
+  );
+  const serverState = {
+    searchRequests: 0,
+    llmRequests: 0,
+    failLlmRequestNumbers: new Set([2])
+  };
+  const server = await startTuneRunWorkerPoolMockServer(serverState);
+  try {
+    const { stdout } = await runCli(
+      [
+        'search',
+        'tune',
+        'run',
+        '--application-id',
+        'app-1',
+        '--dataset-id',
+        'ds-1',
+        '--queries',
+        queriesPath,
+        '--query-count',
+        '2',
+        '--top-k',
+        '3',
+        '--max-strategies',
+        '1',
+        '--llm-concurrency',
+        '3',
+        '--llm-retries',
+        '0',
+        '--max-label-failure-rate',
+        '0.5',
+        '--timeout-ms',
+        '5000',
+        '--output-dir',
+        workspace,
+        '--base-url',
+        server.baseUrl,
+        '--ak',
+        'ak',
+        '--sk',
+        'sk',
+        '--json'
+      ],
+      {
+        env: {
+          VIKING_LLM_BASE_URL: server.baseUrl,
+          VIKING_LLM_API_KEY: 'llm-key',
+          VIKING_LLM_MODEL: 'mock-model'
+        }
+      }
+    );
+    const payload = JSON.parse(stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.labelSource, 'llm');
+    assert.equal(payload.labelFailureCount, 1);
+    assert.equal(payload.performance.labelRequestsFailed, 1);
+    assert.equal(payload.performance.labelRequestsCompleted, 5);
+    const failures = fs.readFileSync(payload.labelFailures, 'utf8').trim().split('\n').filter(Boolean);
+    assert.equal(failures.length, 1);
+    return `${command.prefix} search tune run --application-id app-1 --dataset-id ds-1 --queries ${queriesPath} --max-label-failure-rate 0.5 --json`;
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+}
+
+async function startTuneRunWorkerPoolMockServer(state) {
+  const sampleItems = Array.from({ length: 10 }, (_, index) => ({
+    _id: `sample-${index + 1}`,
+    raw_data: JSON.stringify({ id: `sample-${index + 1}`, title: `Sample ${index + 1}` })
+  }));
+
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk;
+    });
+    req.on('end', () => {
+      const parsedBody = body ? JSON.parse(body) : {};
+      res.setHeader('content-type', 'application/json');
+      if (req.url === '/api/v1/dataset/ds-1/list_items') {
+        const pageNumber = parsedBody.page_number ?? 1;
+        const pageSize = parsedBody.page_size ?? 10;
+        const start = (pageNumber - 1) * pageSize;
+        res.end(JSON.stringify({ result: { items: sampleItems.slice(start, start + pageSize) } }));
+        return;
+      }
+      if (req.url === '/api/v1/application/app-1/search') {
+        state.searchRequests += 1;
+        const queryText = String(parsedBody.query?.text ?? `query-${state.searchRequests}`);
+        const searchResults = Array.from({ length: parsedBody.page_size ?? 3 }, (_, index) => ({
+          _id: `${queryText.replace(/\W+/g, '-')}-item-${index + 1}`,
+          score: 1 - index / 10,
+          display_fields: {
+            title: `${queryText} result ${index + 1}`,
+            category: index === 0 ? 'exact' : 'related',
+            description: `Mock result ${index + 1} for ${queryText}`
+          }
+        }));
+        res.end(JSON.stringify({ result: { total_items: searchResults.length, search_results: searchResults } }));
+        return;
+      }
+      if (req.url.endsWith('/chat/completions')) {
+        state.llmRequests += 1;
+        if (state.failLlmRequestNumbers?.has(state.llmRequests)) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: 'mock LLM failure' }));
+          return;
+        }
+        const delayMs = state.llmRequests === 1 || state.llmRequests === 4 ? 500 : 20;
+        setTimeout(() => {
+          res.end(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({ grade: 3, confidence: 1, reason: 'mock relevant' })
+                  }
+                }
+              ]
+            })
+          );
+        }, delayMs);
+        return;
+      }
+      res.statusCode = 404;
+      res.end(JSON.stringify({ error: `unexpected path: ${req.url}` }));
+    });
+  });
+
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    close: callback => server.close(callback)
+  };
+}
+
+async function startQueryGenerateMockServer(state) {
+  const items = Array.from({ length: 250 }, (_, index) => ({
+    _id: `item-${index + 1}`,
+    raw_data: JSON.stringify({
+      id: `item-${index + 1}`,
+      title: `Viking mock item ${index + 1}`,
+      category: index % 2 === 0 ? 'docs' : 'solutions'
+    })
+  }));
+
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk;
+    });
+    req.on('end', () => {
+      const parsedBody = body ? JSON.parse(body) : {};
+      res.setHeader('content-type', 'application/json');
+      if (req.url === '/api/v1/dataset/ds-1/list_items') {
+        state.dataListRequests += 1;
+        const pageNumber = parsedBody.page_number ?? 1;
+        const pageSize = parsedBody.page_size ?? 100;
+        const start = (pageNumber - 1) * pageSize;
+        res.end(JSON.stringify({ result: { items: items.slice(start, start + pageSize) } }));
+        return;
+      }
+      if (req.url.endsWith('/chat/completions')) {
+        state.llmRequests += 1;
+        const userPayload = JSON.parse(parsedBody.messages?.[1]?.content ?? '{}');
+        const count = userPayload.count ?? 1;
+        const batchIndex = userPayload.batch_index ?? state.llmRequests;
+        const queries = Array.from({ length: count }, (_, index) => ({
+          id: `batch_${batchIndex}_q_${index + 1}`,
+          text: `mock query ${batchIndex}-${index + 1}`,
+          type: 'title_rewrite',
+          intent: 'mock query generation',
+          sourceItemIds: [`item-${batchIndex}-${index + 1}`]
+        }));
+        res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(queries) } }] }));
+        return;
+      }
+      res.statusCode = 404;
+      res.end(JSON.stringify({ error: `unexpected path: ${req.url}` }));
+    });
+  });
+
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    close: callback => server.close(callback)
+  };
+}
+
+async function testSearchTuneApplyDryRun() {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'viking-acceptance-tune-apply-'));
+  const runId = 'run_acceptance';
+  const runDir = path.join(workspace, 'runs', runId);
+  fs.mkdirSync(runDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(runDir, 'report.json'),
+    JSON.stringify(
+      {
+        runId,
+        generatedAt: '2026-05-12T00:00:00Z',
+        applicationId: 'app-1',
+        datasetId: 'ds-1',
+        profile: 'similarity-only',
+        querySource: 'user-provided',
+        topK: 5,
+        queryCount: 2,
+        strategyCount: 1,
+        labelCount: 4,
+        recommendedStrategyId: 'ks-test',
+        strategyCoverage: {},
+        strategies: [
+          {
+            id: 'ks-test',
+            title: 'Keyword + semantic test',
+            searchDynamic: {
+              mode: 'UserDefined',
+              user_defined_recall_mode: 'KeywordSemantic',
+              dense_weight: 0.5,
+              text_weight: 0.5,
+              max_retrieved_num: 100,
+              rerank_enabled: false
+            },
+            requestParams: {
+              query_keyword_match_percent: 0.5,
+              disable_personalize: true
+            }
+          }
+        ],
+        metrics: [],
+        artifacts: {}
+      },
+      null,
+      2
+    )
+  );
+
+  const { stdout } = await runCli([
+    'search',
+    'tune',
+    'apply',
+    '--application-id',
+    'app-1',
+    '--run-id',
+    runId,
+    '--output-dir',
+    workspace,
+    '--dry-run',
+    '--json'
+  ]);
+  const payload = JSON.parse(stdout);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.dryRun, true);
+  assert.equal(payload.createPayload.AppID, 'app-1');
+  assert.equal(payload.onlinePayload.Config.SearchConfig.RetrieveConfigs[0].Mode, 4);
+  assert.equal(payload.onlinePayload.Config.SearchConfig.RetrieveConfigs[0].UserDefinedRecallMode, 0);
+  assert.equal(payload.onlinePayload.Config.SearchConfig.RetrieveConfigs[0].MaxRecallNum, 100);
+  assert.equal(payload.onlinePayload.Config.SearchConfig.RetrieveConfigs[0].DenseWeight, 0.5);
+  assert.equal(payload.unappliedRequestParams.query_keyword_match_percent, 0.5);
+  return `${command.prefix} search tune apply --application-id app-1 --run-id ${runId} --output-dir ${workspace} --dry-run --json`;
+}
+
 async function testConfigSummaryHelp() {
   const datasetGet = await runCli(['dataset', 'get', '--help']);
   assert.match(datasetGet.stdout, /--full/);
@@ -153,10 +758,11 @@ async function testConfigSummaryHelp() {
   const appDatasetConfigGet = await runCli(['app', 'dataset-config', 'get', '--help']);
   assert.match(appDatasetConfigGet.stdout, /--full/);
 
-  const appOnlineConfigGet = await runCli(['app', 'online-config', 'get', '--help']);
-  assert.match(appOnlineConfigGet.stdout, /--full/);
+  const appHelp = await runCli(['app', '--help']);
+  assert.match(appHelp.stdout, /online-config get/i);
+  assert.match(appHelp.stdout, /--full/);
 
-  return `${command.prefix} dataset get --help && ${command.prefix} app dataset-config get --help && ${command.prefix} app online-config get --help`;
+  return `${command.prefix} dataset get --help && ${command.prefix} app dataset-config get --help && ${command.prefix} app --help`;
 }
 
 async function testItemProfile() {
@@ -221,16 +827,15 @@ async function testItemPlan() {
 async function testHighRiskGuards() {
   const itemApplyHelp = await runCli(['item', 'apply', '--help']);
   assert.match(itemApplyHelp.stdout, /--confirm-review/);
-  assert.match(itemApplyHelp.stdout, /--confirm-recommend-entry-binding/);
 
-  const recommendCreateHelp = await runCli(['recommend', 'scene', 'create', '--help']);
-  assert.match(recommendCreateHelp.stdout, /--confirm-entry-binding/);
+  const recommendHelp = await runCli(['recommend', '--help']);
+  assert.match(recommendHelp.stdout, /--confirm-entry-binding/);
 
   const chatSkill = await runCli(['skill', 'show', '--name', 'vs-chat', '--json']);
   const chatSkillPayload = JSON.parse(chatSkill.stdout);
   assert.match(JSON.stringify(chatSkillPayload.workflow), /not treat the output as NDJSON/i);
 
-  return `${command.prefix} item apply --help && ${command.prefix} recommend scene create --help && ${command.prefix} skill show --name vs-chat --json`;
+  return `${command.prefix} item apply --help && ${command.prefix} recommend --help && ${command.prefix} skill show --name vs-chat --json`;
 }
 
 async function testAuthImportEnv() {
