@@ -15,7 +15,7 @@ export default class SearchTuneQueryGenerate extends Command {
 
   static override flags = {
     ...serviceFlags,
-    'timeout-ms': Flags.integer({ default: 60000, description: 'Request timeout in milliseconds. Default: 60000 for LLM-backed query generation.' }),
+    'timeout-ms': Flags.integer({ default: 120000, description: 'Request timeout in milliseconds. Default: 120000 for LLM-backed query generation.' }),
     'application-id': Flags.string({ required: true, description: 'Viking application ID.' }),
     'dataset-id': Flags.string({ description: 'Dataset ID. If omitted, the CLI tries to infer a unique search dataset.' }),
     'query-count': Flags.integer({ default: 100, description: 'Maximum number of queries to generate.' }),

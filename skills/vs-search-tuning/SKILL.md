@@ -50,7 +50,7 @@ This first version is for text-query similarity only. It fixes `mode=UserDefined
    - tunes only `user_defined_recall_mode`, `dense_weight`, `text_weight`, `query_keyword_match_percent`, and `max_retrieved_num`
    - no rerank, personalization, hotness, boost/bury, sort rules, serving controls, or business operating rules
 5. If the user has no query set, generate one first:
-   - `vs search tune query-generate --application-id <id> --dataset-id <dataset> --query-count 100 --sample-size 200 --query-batch-size 10 --llm-concurrency 100 --timeout-ms 60000 --json`
+   - `vs search tune query-generate --application-id <id> --dataset-id <dataset> --query-count 100 --sample-size 200 --query-batch-size 10 --llm-concurrency 100 --timeout-ms 120000 --json`
    Show the returned `sampleQueries`, `typeCounts`, `requestedQueryCount`, `actualQueryCount`, `shortfall`, and `warnings` to the user. If `ok=false`, do not continue to `plan` or `run`; retry with larger timeout/sample size or ask for a real query set. Use the returned `queryFile` only after the user accepts the query set for first-pass tuning.
 6. Run a plan before any expensive evaluation:
    - with user queries: `vs search tune plan --application-id <id> --dataset-id <dataset> --queries <file> --profile similarity-only --json`

@@ -204,7 +204,7 @@ export async function runSearchTunePlanCommand(options: SearchTunePlanOptions): 
 }
 
 export async function runSearchTuneQueryGenerateCommand(options: SearchTuneQueryGenerateOptions): Promise<void> {
-  const effectiveTimeoutMs = options.timeoutMs ?? 60000;
+  const effectiveTimeoutMs = options.timeoutMs ?? 120000;
   const startedAt = Date.now();
   const llmConfig = resolveLlmClientConfig({
     timeoutMs: effectiveTimeoutMs
