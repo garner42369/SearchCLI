@@ -34,6 +34,7 @@ export interface RunSearchTuningOptions {
   queryCount: number;
   topK: number;
   maxStrategies: number;
+  searchConcurrency: number;
   outputDir?: string;
   resumeRunId?: string;
   onProgress?: (event: TuningProgressEvent) => void;
@@ -58,12 +59,13 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
   const completedRankingKeys = new Set(rankings.map(ranking => buildRankingKey(ranking.strategyId, ranking.queryId)));
   const totalSearches = strategies.length * queries.length;
   const totalPossibleLabels = totalSearches * options.topK;
+  const searchConcurrency = Math.max(1, Math.floor(options.searchConcurrency));
   let completedSearches = completedRankingKeys.size;
   let completedLabels = labelsUsed.size;
 
   options.onProgress?.({
     phase: 'start',
-    message: `${options.resumeRunId ? 'Resuming' : 'Starting'} search tuning run ${runId} in ${runDir}: ${queries.length} queries, ${strategies.length} strategies, topK=${options.topK}, up to ${totalPossibleLabels} pointwise judgements.`,
+    message: `${options.resumeRunId ? 'Resuming' : 'Starting'} search tuning run ${runId} in ${runDir}: ${queries.length} queries, ${strategies.length} strategies, topK=${options.topK}, searchConcurrency=${searchConcurrency}, up to ${totalPossibleLabels} pointwise judgements.`,
     completed: completedSearches,
     total: totalSearches
   });
@@ -86,109 +88,66 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
     totalSearches,
     completedLabels,
     totalPossibleLabels,
+    searchConcurrency,
     artifacts
   });
 
   try {
-    for (const strategy of strategies) {
-      options.onProgress?.({
-        phase: 'strategy',
-        message: `Evaluating strategy ${strategy.id}.`,
-        completed: completedSearches,
-        total: totalSearches,
-        strategyId: strategy.id
-      });
-      for (const query of queries) {
-        const rankingKey = buildRankingKey(strategy.id, query.id);
-        if (completedRankingKeys.has(rankingKey)) {
-          continue;
-        }
-        const queryHash = buildQueryHash(query);
-        options.onProgress?.({
-          phase: 'query',
-          message: `Searching query ${query.id} with strategy ${strategy.id}.`,
-          completed: completedSearches,
-          total: totalSearches,
-          strategyId: strategy.id,
-          queryId: query.id
-        });
-        const startedAt = Date.now();
-        const response = await client.search(
-          {
-            id: query.id,
-            query: { text: query.text },
-            dataset_id: options.context.datasetId,
-            page_number: 1,
-            page_size: options.topK,
-            disable_personalize: strategy.requestParams.disable_personalize,
-            query_keyword_match_percent: strategy.requestParams.query_keyword_match_percent
-          },
-          strategy.searchDynamic
-        );
-        const latencyMs = Date.now() - startedAt;
-        const topItems = response.results.slice(0, options.topK);
-
-        const ranking: TuningSearchRanking = {
-          strategyId: strategy.id,
-          queryId: query.id,
-          queryHash,
-          queryText: query.text,
-          latencyMs,
-          totalItems: response.totalItems,
-          items: topItems
-        };
-
-        for (const item of topItems) {
-          const itemView = buildItemJudgeView(item);
-          const itemViewHash = sha256Hex(itemView);
-          const cacheKey = buildLabelCacheKey({
-            datasetId: options.context.datasetId,
-            queryHash,
-            itemId: item.id,
-            itemViewHash,
-            judgeProfileHash
-          });
-          let label = labelCache.labels.get(cacheKey);
-          if (!label) {
-            label = await judgeRelevance({
-              llmConfig: options.llmConfig,
-              datasetId: options.context.datasetId,
-              query,
-              queryHash,
-              itemView,
-              itemViewHash,
-              judgeProfileHash,
-              cacheKey
-            });
-            await appendLabel(labelCache, label);
-          }
-          labelsUsed.set(label.cache_key, label);
-          completedLabels = labelsUsed.size;
+    const pendingSearches = buildPendingSearches(strategies, queries, completedRankingKeys);
+    for (const batch of chunkArray(pendingSearches, searchConcurrency)) {
+      const results = await Promise.allSettled(
+        batch.map(async ({ strategy, query }) => {
+          const queryHash = buildQueryHash(query);
           options.onProgress?.({
-            phase: 'label',
-            message: `Label available for query ${query.id}, item ${item.id}.`,
-            completed: completedLabels,
-            total: totalPossibleLabels,
+            phase: 'query',
+            message: `Searching query ${query.id} with strategy ${strategy.id}.`,
+            completed: completedSearches,
+            total: totalSearches,
             strategyId: strategy.id,
             queryId: query.id
           });
-        }
-
-        rankings.push(ranking);
-        completedRankingKeys.add(rankingKey);
+          const startedAt = Date.now();
+          const response = await client.search(
+            {
+              id: query.id,
+              query: { text: query.text },
+              dataset_id: options.context.datasetId,
+              page_number: 1,
+              page_size: options.topK,
+              disable_personalize: strategy.requestParams.disable_personalize,
+              query_keyword_match_percent: strategy.requestParams.query_keyword_match_percent
+            },
+            strategy.searchDynamic
+          );
+          return {
+            strategyId: strategy.id,
+            queryId: query.id,
+            queryHash,
+            queryText: query.text,
+            latencyMs: Date.now() - startedAt,
+            totalItems: response.totalItems,
+            items: response.results.slice(0, options.topK)
+          } satisfies TuningSearchRanking;
+        })
+      );
+      const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+      for (const result of results) {
+        if (result.status !== 'fulfilled') continue;
+        rankings.push(result.value);
+        completedRankingKeys.add(buildRankingKey(result.value.strategyId, result.value.queryId));
         completedSearches = completedRankingKeys.size;
-        await writeText(artifacts.rankings, toJsonl(rankings));
-        await writeText(artifacts.labelsUsed, toJsonl([...labelsUsed.values()]));
-        await writeJson(artifacts.partialMetrics, buildPartialMetrics(strategies, rankings, [...labelsUsed.values()]));
-        await writeRunState(artifacts.runState, {
+      }
+      await writeSearchCheckpoint({
+        artifacts,
+        strategies,
+        rankings,
+        labels: [...labelsUsed.values()],
+        state: {
           runId,
           generatedAt: setup.generatedAt,
-          updatedAt: new Date().toISOString(),
-          status: 'running',
           applicationId: options.context.applicationId,
           datasetId: options.context.datasetId,
           sceneId: options.context.sceneId,
-          profile: 'similarity-only',
           querySource,
           topK: options.topK,
           queryCount: queries.length,
@@ -198,9 +157,75 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
           totalSearches,
           completedLabels,
           totalPossibleLabels,
-          artifacts
+          searchConcurrency
+        }
+      });
+      if (failures.length > 0) {
+        throw failures[0].reason;
+      }
+    }
+
+    for (const ranking of rankings) {
+      const query = queries.find(item => item.id === ranking.queryId);
+      if (!query) continue;
+      for (const item of ranking.items) {
+        const itemView = buildItemJudgeView(item);
+        const itemViewHash = sha256Hex(itemView);
+        const cacheKey = buildLabelCacheKey({
+          datasetId: options.context.datasetId,
+          queryHash: ranking.queryHash,
+          itemId: item.id,
+          itemViewHash,
+          judgeProfileHash
+        });
+        let label = labelsUsed.get(cacheKey) ?? labelCache.labels.get(cacheKey);
+        if (!label) {
+          label = await judgeRelevance({
+            llmConfig: options.llmConfig,
+            datasetId: options.context.datasetId,
+            query,
+            queryHash: ranking.queryHash,
+            itemView,
+            itemViewHash,
+            judgeProfileHash,
+            cacheKey
+          });
+          await appendLabel(labelCache, label);
+        }
+        labelsUsed.set(label.cache_key, label);
+        completedLabels = labelsUsed.size;
+        options.onProgress?.({
+          phase: 'label',
+          message: `Label available for query ${ranking.queryId}, item ${item.id}.`,
+          completed: completedLabels,
+          total: totalPossibleLabels,
+          strategyId: ranking.strategyId,
+          queryId: ranking.queryId
         });
       }
+      await writeSearchCheckpoint({
+        artifacts,
+        strategies,
+        rankings,
+        labels: [...labelsUsed.values()],
+        state: {
+          runId,
+          generatedAt: setup.generatedAt,
+          applicationId: options.context.applicationId,
+          datasetId: options.context.datasetId,
+          sceneId: options.context.sceneId,
+          querySource,
+          topK: options.topK,
+          queryCount: queries.length,
+          strategyCount: strategies.length,
+          labelCount: labelsUsed.size,
+          completedSearches,
+          totalSearches,
+          completedLabels,
+          totalPossibleLabels,
+          searchConcurrency
+        }
+      });
     }
   } catch (error) {
     await writeRunState(artifacts.runState, {
@@ -221,6 +246,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
       totalSearches,
       completedLabels,
       totalPossibleLabels,
+      searchConcurrency,
       error: error instanceof Error ? error.message : String(error),
       artifacts
     });
@@ -296,6 +322,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
     totalSearches,
     completedLabels,
     totalPossibleLabels,
+    searchConcurrency,
     recommendedStrategyId,
     artifacts
   });
@@ -359,6 +386,29 @@ interface TuningRunSetup {
   strategyCoverage: TuningStrategyCoverage;
 }
 
+interface PendingSearch {
+  strategy: TuningStrategy;
+  query: TuningQuery;
+}
+
+interface CheckpointStateBase {
+  runId: string;
+  generatedAt: string;
+  applicationId: string;
+  datasetId: string;
+  sceneId?: string;
+  querySource: 'user-provided' | 'generated';
+  topK: number;
+  queryCount: number;
+  strategyCount: number;
+  labelCount: number;
+  completedSearches: number;
+  totalSearches: number;
+  completedLabels: number;
+  totalPossibleLabels: number;
+  searchConcurrency: number;
+}
+
 async function createNewRunSetup(
   options: RunSearchTuningOptions & {
     runId: string;
@@ -410,6 +460,63 @@ async function loadExistingRankings(filePath: string): Promise<TuningSearchRanki
 async function loadExistingLabels(filePath: string): Promise<Map<string, JudgeLabel>> {
   const labels = (await pathExists(filePath)) ? await loadJsonOrJsonl<JudgeLabel>(filePath) : [];
   return new Map(labels.map(label => [label.cache_key, label]));
+}
+
+function buildPendingSearches(
+  strategies: TuningStrategy[],
+  queries: TuningQuery[],
+  completedRankingKeys: Set<string>
+): PendingSearch[] {
+  const pending: PendingSearch[] = [];
+  for (const strategy of strategies) {
+    for (const query of queries) {
+      if (!completedRankingKeys.has(buildRankingKey(strategy.id, query.id))) {
+        pending.push({ strategy, query });
+      }
+    }
+  }
+  return pending;
+}
+
+async function writeSearchCheckpoint(input: {
+  artifacts: Record<string, string>;
+  strategies: TuningStrategy[];
+  rankings: TuningSearchRanking[];
+  labels: JudgeLabel[];
+  state: CheckpointStateBase;
+}): Promise<void> {
+  await writeText(input.artifacts.rankings, toJsonl(input.rankings));
+  await writeText(input.artifacts.labelsUsed, toJsonl(input.labels));
+  await writeJson(input.artifacts.partialMetrics, buildPartialMetrics(input.strategies, input.rankings, input.labels));
+  await writeRunState(input.artifacts.runState, {
+    runId: input.state.runId,
+    generatedAt: input.state.generatedAt,
+    updatedAt: new Date().toISOString(),
+    status: 'running',
+    applicationId: input.state.applicationId,
+    datasetId: input.state.datasetId,
+    sceneId: input.state.sceneId,
+    profile: 'similarity-only',
+    querySource: input.state.querySource,
+    topK: input.state.topK,
+    queryCount: input.state.queryCount,
+    strategyCount: input.state.strategyCount,
+    labelCount: input.state.labelCount,
+    completedSearches: input.state.completedSearches,
+    totalSearches: input.state.totalSearches,
+    completedLabels: input.state.completedLabels,
+    totalPossibleLabels: input.state.totalPossibleLabels,
+    searchConcurrency: input.state.searchConcurrency,
+    artifacts: input.artifacts
+  });
+}
+
+function chunkArray<T>(values: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks;
 }
 
 function buildRunArtifacts(runDir: string): Record<string, string> {

@@ -226,6 +226,9 @@ async function testSearchTunePlan() {
 
 async function testSearchTuneRunHelp() {
   const { stdout } = await runCli(['search', 'tune', 'run', '--help']);
+  assert.match(stdout, /--search-concurrency/);
+  assert.match(stdout, /Default: 18/);
+  assert.doesNotMatch(stdout, /--scene-id/);
   assert.match(stdout, /--resume-run-id/);
   assert.match(stdout, /run-state\.json/);
   assert.match(stdout, /partial-metrics\.json/);

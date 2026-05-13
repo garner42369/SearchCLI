@@ -57,9 +57,9 @@ This first version is for text-query similarity only. It fixes `mode=UserDefined
    - with generated queries: use the `queryFile` returned by `query-generate`
    Summarize the estimated search requests, max pointwise LLM judgements, and parameter coverage.
 7. Run tuning only after the plan is acceptable:
-   - with user queries: `vs search tune run --application-id <id> --dataset-id <dataset> --queries <file> --profile similarity-only`
+   - with user queries: `vs search tune run --application-id <id> --dataset-id <dataset> --queries <file> --profile similarity-only --search-concurrency 18`
    - with generated queries: use the `queryFile` returned by `query-generate`
-   Use the command form above for first-pass tuning unless the user explicitly asks for a different evaluation scope.
+   Use the command form above for first-pass tuning unless the user explicitly asks for a different evaluation scope. Search requests default to 18-way concurrency.
 8. While a run is active, use the artifact paths from progress output if troubleshooting is needed:
    - `run-state.json`: current status, completed searches, labels, and resume metadata
    - `partial-metrics.json`: partial metrics from completed query/strategy pairs

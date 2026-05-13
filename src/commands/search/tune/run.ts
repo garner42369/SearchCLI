@@ -10,7 +10,7 @@ export default class SearchTuneRun extends Command {
 
   static override examples = [
     '<%= config.bin %> search tune run --application-id app --dataset-id ds --profile similarity-only',
-    '<%= config.bin %> search tune run --application-id app --dataset-id ds --queries ./queries.jsonl --top-k 20 --max-strategies 30',
+    '<%= config.bin %> search tune run --application-id app --dataset-id ds --queries ./queries.jsonl --top-k 20 --max-strategies 30 --search-concurrency 18',
     '<%= config.bin %> search tune run --application-id app --resume-run-id run_2026-05-12T00-00-00Z'
   ];
 
@@ -18,12 +18,12 @@ export default class SearchTuneRun extends Command {
     ...serviceFlags,
     'application-id': Flags.string({ required: true, description: 'Viking application ID.' }),
     'dataset-id': Flags.string({ description: 'Dataset ID. If omitted, the CLI tries to infer a unique search dataset.' }),
-    'scene-id': Flags.string({ description: 'Optional search scene ID.' }),
     profile: Flags.string({ default: 'similarity-only', options: ['similarity-only'] }),
     queries: Flags.string({ description: 'JSON/JSONL/CSV query set. If omitted, the CLI uses the configured LLM to generate queries.' }),
     'query-count': Flags.integer({ default: 100, description: 'Maximum number of queries to evaluate.' }),
     'top-k': Flags.integer({ default: 20, description: 'Number of search results judged per query and strategy.' }),
     'max-strategies': Flags.integer({ default: 30, description: 'Maximum number of candidate strategies to evaluate.' }),
+    'search-concurrency': Flags.integer({ default: 18, min: 1, description: 'Concurrent search requests. Default: 18.' }),
     'output-dir': Flags.string({ description: 'Tuning artifact root. Defaults to .viking/search-tuning.' }),
     'resume-run-id': Flags.string({ description: 'Resume an incomplete run from run-state.json, rankings.jsonl, labels-used.jsonl, and partial-metrics.json.' })
   };
@@ -40,12 +40,12 @@ export default class SearchTuneRun extends Command {
       data: flags.data,
       applicationId: flags['application-id'],
       datasetId: flags['dataset-id'],
-      sceneId: flags['scene-id'],
       profile: flags.profile,
       queries: flags.queries,
       queryCount: flags['query-count'],
       topK: flags['top-k'],
       maxStrategies: flags['max-strategies'],
+      searchConcurrency: flags['search-concurrency'],
       outputDir: flags['output-dir'],
       resumeRunId: flags['resume-run-id']
     });

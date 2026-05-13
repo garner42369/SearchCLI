@@ -141,6 +141,7 @@ export interface TuningRunStateShape {
   totalSearches: number;
   completedLabels: number;
   totalPossibleLabels: number;
+  searchConcurrency: number;
   recommendedStrategyId?: string;
   error?: string;
   artifacts: Record<string, string>;

@@ -17,7 +17,6 @@ export default class SearchTuneQueryGenerate extends Command {
     ...serviceFlags,
     'application-id': Flags.string({ required: true, description: 'Viking application ID.' }),
     'dataset-id': Flags.string({ description: 'Dataset ID. If omitted, the CLI tries to infer a unique search dataset.' }),
-    'scene-id': Flags.string({ description: 'Optional search scene ID.' }),
     'query-count': Flags.integer({ default: 100, description: 'Maximum number of queries to generate.' }),
     'output-dir': Flags.string({ description: 'Tuning artifact root. Defaults to .viking/search-tuning.' })
   };
@@ -34,7 +33,6 @@ export default class SearchTuneQueryGenerate extends Command {
       data: flags.data,
       applicationId: flags['application-id'],
       datasetId: flags['dataset-id'],
-      sceneId: flags['scene-id'],
       queryCount: flags['query-count'],
       outputDir: flags['output-dir']
     });

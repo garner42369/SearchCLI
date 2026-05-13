@@ -1459,9 +1459,9 @@ COMMON FLAGS
         'vs search scene update --application-id <id> --scene-id <id> [--config @scene.json] [--search-config @search.json] [--query-completion-config @qc.json] [--want-to-search-config @wts.json] [--overview-config @overview.json] [service flags]',
         'vs search scene delete --application-id <id> --scene-id <id> [service flags]',
         'vs search tune llm-check [--live] [service flags]',
-        'vs search tune plan --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--queries <file>] [--profile similarity-only] [service flags]',
-        'vs search tune query-generate --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--query-count <n>] [service flags]',
-        'vs search tune run --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--queries <file>] [--resume-run-id <id>] [--profile similarity-only] [service flags]',
+        'vs search tune plan --application-id <id> [--dataset-id <id>] [--queries <file>] [--profile similarity-only] [service flags]',
+        'vs search tune query-generate --application-id <id> [--dataset-id <id>] [--query-count <n>] [service flags]',
+        'vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--profile similarity-only] [--search-concurrency <n>] [service flags]',
         'vs search tune apply --application-id <id> --run-id <id> [--dry-run | --confirm-create-scene] [service flags]',
         'vs search tune report --run-id <id> [--output-dir <dir>] [service flags]'
       ]
@@ -1961,7 +1961,7 @@ EXAMPLES
     'tune:plan': `Plan first-version automated search evaluation and similarity tuning.
 
 USAGE
-  vs search tune plan --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--queries <file>] [--profile similarity-only] [service flags]
+  vs search tune plan --application-id <id> [--dataset-id <id>] [--queries <file>] [--profile similarity-only] [service flags]
 
 DESCRIPTION
   Prints the fixed scope, query source, candidate strategy count, cost estimate, and strategy coverage.
@@ -1970,7 +1970,6 @@ DESCRIPTION
 KEY FLAGS
   --application-id  Target application ID.
   --dataset-id      Dataset ID.
-  --scene-id        Optional search scene ID.
   --queries         JSON, JSONL, or CSV query set. If omitted, the plan assumes CLI-generated queries.
   --query-count     Maximum query count. Default: 100.
   --top-k           Results judged per query and strategy. Default: 20.
@@ -1982,7 +1981,7 @@ EXAMPLES
     'tune:query-generate': `Generate a reusable synthetic query set for search tuning.
 
 USAGE
-  vs search tune query-generate --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--query-count <n>] [--output-dir <dir>] [service flags]
+  vs search tune query-generate --application-id <id> [--dataset-id <id>] [--query-count <n>] [--output-dir <dir>] [service flags]
 
 DESCRIPTION
   Uses dataset samples and the configured CLI LLM to generate a JSONL query set. Review the returned
@@ -1991,7 +1990,6 @@ DESCRIPTION
 KEY FLAGS
   --application-id  Target application ID.
   --dataset-id      Dataset ID. If omitted, the CLI tries to infer a unique search dataset.
-  --scene-id        Optional search scene ID.
   --query-count     Maximum query count. Default: 100.
   --output-dir      Artifact root. Default: .viking/search-tuning.
 
@@ -2001,7 +1999,7 @@ EXAMPLES
     'tune:run': `Run first-version automated search evaluation and similarity tuning.
 
 USAGE
-  vs search tune run --application-id <id> [--dataset-id <id>] [--scene-id <id>] [--queries <file>] [--resume-run-id <id>] [--profile similarity-only] [service flags]
+  vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--profile similarity-only] [--search-concurrency <n>] [service flags]
 
 DESCRIPTION
   Runs text-query similarity tuning with CLI-managed LLM query generation and pointwise relevance judging.
@@ -2012,17 +2010,17 @@ DESCRIPTION
 KEY FLAGS
   --application-id  Target application ID.
   --dataset-id      Dataset ID. If omitted, the CLI tries to infer a unique search dataset.
-  --scene-id        Optional search scene ID.
   --queries         JSON, JSONL, or CSV query set. If omitted, the CLI generates queries from sample items.
   --query-count     Maximum query count. Default: 100.
   --top-k           Results judged per query and strategy. Default: 20.
   --max-strategies  Maximum candidate strategies. Default: 30.
+  --search-concurrency  Concurrent search requests. Default: 18.
   --resume-run-id   Resume an incomplete run from its existing artifact directory.
   --output-dir      Artifact root. Default: .viking/search-tuning.
 
 EXAMPLES
   vs search tune run --application-id 123 --dataset-id 456 --profile similarity-only
-  vs search tune run --application-id 123 --dataset-id 456 --queries ./queries.jsonl --top-k 20 --max-strategies 30`,
+  vs search tune run --application-id 123 --dataset-id 456 --queries ./queries.jsonl --top-k 20 --max-strategies 30 --search-concurrency 18`,
     'tune:apply': `Create a new search scene from a completed tuning report recommendation.
 
 USAGE
@@ -2526,7 +2524,6 @@ async function runSearchCli(argv: string[]): Promise<void> {
             projectName: optionalString(values['project-name']),
             applicationId: requiredString(values['application-id'], '--application-id'),
             datasetId: optionalString(values['dataset-id']),
-            sceneId: optionalString(values['scene-id']),
             profile: optionalString(values.profile),
             queries: optionalString(values.queries),
             queryCount: parseOptionalInt(optionalString(values['query-count'])),
@@ -2540,7 +2537,6 @@ async function runSearchCli(argv: string[]): Promise<void> {
             projectName: optionalString(values['project-name']),
             applicationId: requiredString(values['application-id'], '--application-id'),
             datasetId: optionalString(values['dataset-id']),
-            sceneId: optionalString(values['scene-id']),
             queryCount: parseOptionalInt(optionalString(values['query-count'])),
             outputDir: optionalString(values['output-dir'])
           });
@@ -2551,12 +2547,12 @@ async function runSearchCli(argv: string[]): Promise<void> {
             projectName: optionalString(values['project-name']),
             applicationId: requiredString(values['application-id'], '--application-id'),
             datasetId: optionalString(values['dataset-id']),
-            sceneId: optionalString(values['scene-id']),
             profile: optionalString(values.profile),
             queries: optionalString(values.queries),
             queryCount: parseOptionalInt(optionalString(values['query-count'])),
             topK: parseOptionalInt(optionalString(values['top-k'])),
             maxStrategies: parseOptionalInt(optionalString(values['max-strategies'])),
+            searchConcurrency: parseOptionalInt(optionalString(values['search-concurrency'])),
             outputDir: optionalString(values['output-dir']),
             resumeRunId: optionalString(values['resume-run-id'])
           });
@@ -2753,6 +2749,7 @@ function parseStandaloneOptions(argv: string[]) {
       'query-count': { type: 'string' },
       'top-k': { type: 'string' },
       'max-strategies': { type: 'string' },
+      'search-concurrency': { type: 'string' },
       'run-id': { type: 'string' },
       'resume-run-id': { type: 'string' },
       'scene-name': { type: 'string' },
