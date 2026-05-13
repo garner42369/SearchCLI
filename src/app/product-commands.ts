@@ -1461,7 +1461,7 @@ COMMON FLAGS
         'vs search tune llm-check [--live] [service flags]',
         'vs search tune plan --application-id <id> [--dataset-id <id>] [--queries <file>] [--profile similarity-only] [service flags]',
         'vs search tune query-generate --application-id <id> [--dataset-id <id>] [--query-count <n>] [--sample-size <n>] [--query-batch-size <n>] [--llm-concurrency <n>] [service flags]',
-        'vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--profile similarity-only] [--search-concurrency <n>] [--llm-concurrency <n>] [service flags]',
+        'vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--profile similarity-only] [--search-concurrency <n>] [--llm-concurrency <n>] [--timeout-ms <ms>] [service flags]',
         'vs search tune apply --application-id <id> --run-id <id> [--dry-run | --confirm-create-scene] [service flags]',
         'vs search tune report --run-id <id> [--output-dir <dir>] [service flags]'
       ]
@@ -2004,7 +2004,7 @@ EXAMPLES
     'tune:run': `Run first-version automated search evaluation and similarity tuning.
 
 USAGE
-  vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--profile similarity-only] [--search-concurrency <n>] [--llm-concurrency <n>] [service flags]
+  vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--profile similarity-only] [--search-concurrency <n>] [--llm-concurrency <n>] [--timeout-ms <ms>] [service flags]
 
 DESCRIPTION
   Runs text-query similarity tuning with CLI-managed LLM query generation and pointwise relevance judging.
@@ -2022,6 +2022,7 @@ KEY FLAGS
   --max-strategies  Maximum candidate strategies. Default: 30.
   --search-concurrency  Concurrent search requests. Default: 18.
   --llm-concurrency     Concurrent LLM relevance judgements. Default: 100.
+  --timeout-ms      Request timeout. Default: 120000 for LLM-backed tuning.
   --resume-run-id   Resume an incomplete run from its existing artifact directory.
   --output-dir      Artifact root. Default: .viking/search-tuning.
 

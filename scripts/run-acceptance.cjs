@@ -34,6 +34,7 @@ async function main() {
   await runTest('search-run-requires-scene-help', testSearchRunRequiresSceneHelp);
   await runTest('search-tune-plan', testSearchTunePlan);
   await runTest('search-tune-query-generate-mock', testSearchTuneQueryGenerateMock);
+  await runTest('search-tune-run-worker-pool-mock', testSearchTuneRunWorkerPoolMock);
   await runTest('search-tune-apply-dry-run', testSearchTuneApplyDryRun);
   await runTest('search-tune-run-help', testSearchTuneRunHelp);
   await runTest('app-list-help', testAppListHelp);
@@ -306,6 +307,149 @@ async function testSearchTuneQueryGenerateMock() {
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
+}
+
+async function testSearchTuneRunWorkerPoolMock() {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'viking-acceptance-tune-run-'));
+  const queriesPath = path.join(workspace, 'queries.jsonl');
+  fs.writeFileSync(
+    queriesPath,
+    [
+      JSON.stringify({ id: 'q1', text: 'training shirt', intent: 'Find a training shirt' }),
+      JSON.stringify({ id: 'q2', text: 'golf polo', intent: 'Find a golf polo' })
+    ].join('\n')
+  );
+  const serverState = {
+    searchRequests: 0,
+    llmRequests: 0
+  };
+  const server = await startTuneRunWorkerPoolMockServer(serverState);
+  try {
+    const startedAt = Date.now();
+    const { stdout } = await runCli(
+      [
+        'search',
+        'tune',
+        'run',
+        '--application-id',
+        'app-1',
+        '--dataset-id',
+        'ds-1',
+        '--queries',
+        queriesPath,
+        '--query-count',
+        '2',
+        '--top-k',
+        '3',
+        '--max-strategies',
+        '1',
+        '--search-concurrency',
+        '1',
+        '--llm-concurrency',
+        '3',
+        '--timeout-ms',
+        '5000',
+        '--output-dir',
+        workspace,
+        '--base-url',
+        server.baseUrl,
+        '--ak',
+        'ak',
+        '--sk',
+        'sk',
+        '--json'
+      ],
+      {
+        env: {
+          VIKING_LLM_BASE_URL: server.baseUrl,
+          VIKING_LLM_API_KEY: 'llm-key',
+          VIKING_LLM_MODEL: 'mock-model'
+        }
+      }
+    );
+    const wallMs = Date.now() - startedAt;
+    const payload = JSON.parse(stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(serverState.searchRequests, 2);
+    assert.equal(serverState.llmRequests, 6);
+    assert.equal(payload.performance.labelRequestsCompleted, 6);
+    assert.equal(payload.performance.labelCacheMisses, 6);
+    assert.ok(payload.performance.llmWallMs < 900, `expected worker-pool LLM wall < 900ms, got ${payload.performance.llmWallMs}`);
+    assert.ok(wallMs < 2000, `expected tune run wall < 2000ms, got ${wallMs}`);
+    const state = JSON.parse(fs.readFileSync(payload.runState, 'utf8'));
+    assert.equal(state.status, 'completed');
+    assert.match(fs.readFileSync(payload.report, 'utf8'), /Recommended strategy/i);
+    return `${command.prefix} search tune run --application-id app-1 --dataset-id ds-1 --queries ${queriesPath} --json`;
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+}
+
+async function startTuneRunWorkerPoolMockServer(state) {
+  const sampleItems = Array.from({ length: 10 }, (_, index) => ({
+    _id: `sample-${index + 1}`,
+    raw_data: JSON.stringify({ id: `sample-${index + 1}`, title: `Sample ${index + 1}` })
+  }));
+
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk;
+    });
+    req.on('end', () => {
+      const parsedBody = body ? JSON.parse(body) : {};
+      res.setHeader('content-type', 'application/json');
+      if (req.url === '/api/v1/dataset/ds-1/list_items') {
+        const pageNumber = parsedBody.page_number ?? 1;
+        const pageSize = parsedBody.page_size ?? 10;
+        const start = (pageNumber - 1) * pageSize;
+        res.end(JSON.stringify({ result: { items: sampleItems.slice(start, start + pageSize) } }));
+        return;
+      }
+      if (req.url === '/api/v1/application/app-1/search') {
+        state.searchRequests += 1;
+        const queryText = String(parsedBody.query?.text ?? `query-${state.searchRequests}`);
+        const searchResults = Array.from({ length: parsedBody.page_size ?? 3 }, (_, index) => ({
+          _id: `${queryText.replace(/\W+/g, '-')}-item-${index + 1}`,
+          score: 1 - index / 10,
+          display_fields: {
+            title: `${queryText} result ${index + 1}`,
+            category: index === 0 ? 'exact' : 'related',
+            description: `Mock result ${index + 1} for ${queryText}`
+          }
+        }));
+        res.end(JSON.stringify({ result: { total_items: searchResults.length, search_results: searchResults } }));
+        return;
+      }
+      if (req.url.endsWith('/chat/completions')) {
+        state.llmRequests += 1;
+        const delayMs = state.llmRequests === 1 || state.llmRequests === 4 ? 500 : 20;
+        setTimeout(() => {
+          res.end(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({ grade: 3, confidence: 1, reason: 'mock relevant' })
+                  }
+                }
+              ]
+            })
+          );
+        }, delayMs);
+        return;
+      }
+      res.statusCode = 404;
+      res.end(JSON.stringify({ error: `unexpected path: ${req.url}` }));
+    });
+  });
+
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    close: callback => server.close(callback)
+  };
 }
 
 async function startQueryGenerateMockServer(state) {

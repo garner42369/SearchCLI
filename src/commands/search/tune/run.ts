@@ -16,6 +16,10 @@ export default class SearchTuneRun extends Command {
 
   static override flags = {
     ...serviceFlags,
+    'timeout-ms': Flags.integer({
+      default: 120000,
+      description: 'Request timeout in milliseconds. Default: 120000 for LLM-backed tuning.'
+    }),
     'application-id': Flags.string({ required: true, description: 'Viking application ID.' }),
     'dataset-id': Flags.string({ description: 'Dataset ID. If omitted, the CLI tries to infer a unique search dataset.' }),
     profile: Flags.string({ default: 'similarity-only', options: ['similarity-only'] }),

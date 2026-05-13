@@ -8,7 +8,7 @@ import { type LlmClientConfig } from '../llm-client';
 import { VikingSearchClient } from '../search-client';
 import type { RuntimeConfig } from '../types';
 import { buildItemJudgeView, buildJudgeProfileHash, judgeRelevance } from './judge';
-import { appendLabel, buildLabelCacheKey, loadLabelCache } from './label-cache';
+import { appendLabel, buildLabelCacheKey, loadLabelCache, type LabelCache } from './label-cache';
 import { computeStrategyMetrics, chooseRecommendedStrategy } from './metrics';
 import { generateTuningQueries, loadTuningQueries, searchCaseToTuningQuery } from './query-generator';
 import { renderTuningMarkdownReport } from './report';
@@ -240,81 +240,83 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
     labelCacheHits += labelPlan.cacheHits;
     labelCacheMisses += pendingLabels.length;
     completedLabels = labelsUsed.size;
-    for (const batch of chunkArray(pendingLabels, llmConcurrency)) {
-      const batchStartedAt = Date.now();
-      const results = await Promise.allSettled(
-        batch.map(pending =>
-          judgeTimedRelevance({
-            llmConfig: options.llmConfig,
-            datasetId: options.context.datasetId,
-            query: pending.query,
-            queryHash: pending.queryHash,
-            itemView: pending.itemView,
-            itemViewHash: pending.itemViewHash,
-            judgeProfileHash,
-            cacheKey: pending.cacheKey
-          })
-        )
-      );
-      const batchWallMs = Date.now() - batchStartedAt;
-      llmWallMs += batchWallMs;
-      const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
-      let batchCompletedLabels = 0;
-      let batchLatencySumMs = 0;
-      for (let index = 0; index < results.length; index += 1) {
-        const result = results[index];
-        if (result.status !== 'fulfilled') continue;
-        const pending = batch[index];
-        await appendLabel(labelCache, result.value.label);
-        labelsUsed.set(result.value.label.cache_key, result.value.label);
+    const labelProgressTotal = labelsUsed.size + pendingLabels.length;
+    options.onProgress?.({
+      phase: 'label',
+      message: `LLM label plan: ${labelProgressTotal} unique labels (${labelCacheHits} cache hits, ${pendingLabels.length} misses) from up to ${totalPossibleLabels} pointwise judgements.`,
+      completed: completedLabels,
+      total: labelProgressTotal
+    });
+    const labelStartedAt = Date.now();
+    const labelFailures = await runLabelWorkers({
+      pendingLabels,
+      llmConcurrency,
+      judgeProfileHash,
+      datasetId: options.context.datasetId,
+      llmConfig: options.llmConfig,
+      artifacts,
+      strategies,
+      rankings,
+      labelsUsed,
+      labelCache,
+      state: {
+        runId,
+        generatedAt: setup.generatedAt,
+        applicationId: options.context.applicationId,
+        datasetId: options.context.datasetId,
+        sceneId: options.context.sceneId,
+        querySource,
+        topK: options.topK,
+        queryCount: queries.length,
+        strategyCount: strategies.length,
+        labelCount: labelsUsed.size,
+        completedSearches,
+        totalSearches,
+        completedLabels,
+        totalPossibleLabels,
+        searchConcurrency,
+        llmConcurrency,
+        performance: currentPerformance()
+      },
+      progressTotal: labelProgressTotal,
+      progress: options.onProgress,
+      currentPerformance,
+      onLabel: result => {
         completedLabels = labelsUsed.size;
         labelRequestsCompleted += 1;
-        batchCompletedLabels += 1;
-        batchLatencySumMs += result.value.latencyMs;
-        options.onProgress?.({
-          phase: 'label',
-          message: `Label available for query ${pending.queryId}, item ${pending.itemId}.`,
-          completed: completedLabels,
-          total: totalPossibleLabels,
-          strategyId: pending.strategyId,
-          queryId: pending.queryId
-        });
+        llmLatencySumMs += result.latencyMs;
       }
-      llmLatencySumMs += batchLatencySumMs;
-      options.onProgress?.({
-        phase: 'label',
-        message: `LLM label batch completed: ${batchCompletedLabels}/${batch.length} judgements in ${formatDuration(batchWallMs)}; avg latency=${formatDuration(safeAverage(batchLatencySumMs, batchCompletedLabels))}; throughput=${formatRate(batchCompletedLabels, batchWallMs)} labels/s; cache hits=${labelCacheHits}.`,
-        completed: completedLabels,
-        total: totalPossibleLabels
-      });
-      await writeSearchCheckpoint({
-        artifacts,
-        strategies,
-        rankings,
-        labels: [...labelsUsed.values()],
-        state: {
-          runId,
-          generatedAt: setup.generatedAt,
-          applicationId: options.context.applicationId,
-          datasetId: options.context.datasetId,
-          sceneId: options.context.sceneId,
-          querySource,
-          topK: options.topK,
-          queryCount: queries.length,
-          strategyCount: strategies.length,
-          labelCount: labelsUsed.size,
-          completedSearches,
-          totalSearches,
-          completedLabels,
-          totalPossibleLabels,
-          searchConcurrency,
-          llmConcurrency,
-          performance: currentPerformance()
-        }
-      });
-      if (failures.length > 0) {
-        throw failures[0].reason;
+    });
+    llmWallMs += Date.now() - labelStartedAt;
+    await writeSearchCheckpoint({
+      artifacts,
+      strategies,
+      rankings,
+      labels: [...labelsUsed.values()],
+      state: {
+        runId,
+        generatedAt: setup.generatedAt,
+        applicationId: options.context.applicationId,
+        datasetId: options.context.datasetId,
+        sceneId: options.context.sceneId,
+        querySource,
+        topK: options.topK,
+        queryCount: queries.length,
+        strategyCount: strategies.length,
+        labelCount: labelsUsed.size,
+        completedSearches,
+        totalSearches,
+        completedLabels,
+        totalPossibleLabels,
+        searchConcurrency,
+        llmConcurrency,
+        performance: currentPerformance()
       }
+    });
+    if (labelFailures.length > 0) {
+      throw new Error(
+        `LLM relevance judging failed for ${labelFailures.length} label(s). First failure: ${formatErrorMessage(labelFailures[0]?.error)}. Completed ${completedLabels}/${labelProgressTotal} unique labels; resume this run with --resume-run-id ${runId}.`
+      );
     }
   } catch (error) {
     const failedPerformance = currentPerformance(new Date().toISOString());
@@ -728,6 +730,137 @@ function buildPartialMetrics(strategies: TuningStrategy[], rankings: TuningSearc
   };
 }
 
+interface LabelWorkerFailure {
+  pending: PendingLabel;
+  error: unknown;
+}
+
+async function runLabelWorkers(input: {
+  pendingLabels: PendingLabel[];
+  llmConcurrency: number;
+  judgeProfileHash: string;
+  datasetId: string;
+  llmConfig: LlmClientConfig;
+  artifacts: Record<string, string>;
+  strategies: TuningStrategy[];
+  rankings: TuningSearchRanking[];
+  labelsUsed: Map<string, JudgeLabel>;
+  labelCache: LabelCache;
+  state: CheckpointStateBase;
+  progressTotal: number;
+  progress?: (event: TuningProgressEvent) => void;
+  currentPerformance: () => TuningPerformanceSummary;
+  onLabel: (result: { latencyMs: number }) => void;
+}): Promise<LabelWorkerFailure[]> {
+  const failures: LabelWorkerFailure[] = [];
+  if (input.pendingLabels.length === 0) return failures;
+
+  let nextIndex = 0;
+  let completedMisses = 0;
+  let latencySumMs = 0;
+  let labelsSinceCheckpoint = 0;
+  let lastCheckpointAt = Date.now();
+  let writeQueue: Promise<void> = Promise.resolve();
+  let checkpointQueue: Promise<void> = Promise.resolve();
+  const phaseStartedAt = Date.now();
+  const workerCount = Math.min(input.llmConcurrency, input.pendingLabels.length);
+
+  const checkpoint = async (force = false): Promise<void> => {
+    if (!force && labelsSinceCheckpoint < 100 && Date.now() - lastCheckpointAt < 15000) return;
+    labelsSinceCheckpoint = 0;
+    lastCheckpointAt = Date.now();
+    const labelsSnapshot = [...input.labelsUsed.values()];
+    const completedLabelsSnapshot = input.labelsUsed.size;
+    checkpointQueue = checkpointQueue.then(() =>
+      writeSearchCheckpoint({
+        artifacts: input.artifacts,
+        strategies: input.strategies,
+        rankings: input.rankings,
+        labels: labelsSnapshot,
+        state: {
+          ...input.state,
+          labelCount: completedLabelsSnapshot,
+          completedLabels: completedLabelsSnapshot,
+          performance: input.currentPerformance()
+        }
+      })
+    );
+    await checkpointQueue;
+  };
+
+  const recordLabel = async (
+    pending: PendingLabel,
+    result: { label: JudgeLabel; latencyMs: number }
+  ): Promise<void> => {
+    writeQueue = writeQueue.then(() => appendLabel(input.labelCache, result.label));
+    await writeQueue;
+    input.labelsUsed.set(result.label.cache_key, result.label);
+    completedMisses += 1;
+    labelsSinceCheckpoint += 1;
+    latencySumMs += result.latencyMs;
+    input.onLabel({ latencyMs: result.latencyMs });
+    const completedLabels = input.labelsUsed.size;
+    input.progress?.({
+      phase: 'label',
+      message: `Label available for query ${pending.queryId}, item ${pending.itemId}.`,
+      completed: completedLabels,
+      total: input.progressTotal,
+      strategyId: pending.strategyId,
+      queryId: pending.queryId
+    });
+    if (completedMisses % 100 === 0 || completedMisses === input.pendingLabels.length) {
+      const wallMs = Date.now() - phaseStartedAt;
+      input.progress?.({
+        phase: 'label',
+        message: `LLM labels completed: ${completedLabels}/${input.progressTotal} unique labels in ${formatDuration(wallMs)}; avg latency=${formatDuration(safeAverage(latencySumMs, completedMisses))}; throughput=${formatRate(completedMisses, wallMs)} labels/s.`,
+        completed: completedLabels,
+        total: input.progressTotal
+      });
+    }
+    await checkpoint();
+  };
+
+  const runOne = async (pending: PendingLabel): Promise<void> => {
+    try {
+      const result = await judgeTimedRelevance({
+        llmConfig: input.llmConfig,
+        datasetId: input.datasetId,
+        query: pending.query,
+        queryHash: pending.queryHash,
+        itemView: pending.itemView,
+        itemViewHash: pending.itemViewHash,
+        judgeProfileHash: input.judgeProfileHash,
+        cacheKey: pending.cacheKey
+      });
+      await recordLabel(pending, result);
+    } catch (error) {
+      failures.push({ pending, error });
+      input.progress?.({
+        phase: 'label',
+        message: `LLM label failed for query ${pending.queryId}, item ${pending.itemId}: ${formatErrorMessage(error)}`,
+        completed: input.labelsUsed.size,
+        total: input.progressTotal,
+        strategyId: pending.strategyId,
+        queryId: pending.queryId
+      });
+    }
+  };
+
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (nextIndex < input.pendingLabels.length) {
+      const pending = input.pendingLabels[nextIndex];
+      nextIndex += 1;
+      await runOne(pending);
+    }
+  });
+
+  await Promise.all(workers);
+  await writeQueue;
+  await checkpoint(true);
+  await checkpointQueue;
+  return failures;
+}
+
 async function writeRunState(filePath: string, state: TuningRunStateShape): Promise<void> {
   await writeJson(filePath, state);
 }
@@ -828,4 +961,9 @@ function buildQueryHash(query: TuningQuery): string {
 
 function toJsonl(values: unknown[]): string {
   return `${values.map(value => stableStringify(value)).join('\n')}\n`;
+}
+
+function formatErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message.split('\n')[0] ?? error.message;
+  return String(error);
 }

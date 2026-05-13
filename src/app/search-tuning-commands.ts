@@ -110,8 +110,9 @@ export async function runSearchTuneRunCommand(options: SearchTuneRunOptions): Pr
     throw new Error('Only --profile similarity-only is supported in the first version.');
   }
 
+  const effectiveTimeoutMs = options.timeoutMs ?? 120000;
   const llmConfig = resolveLlmClientConfig({
-    timeoutMs: options.timeoutMs
+    timeoutMs: effectiveTimeoutMs
   });
   if (!llmConfig) {
     throw new Error(
@@ -119,7 +120,10 @@ export async function runSearchTuneRunCommand(options: SearchTuneRunOptions): Pr
     );
   }
 
-  const serviceConfig = resolveServiceConfig(toServiceConfigInput(options));
+  const serviceConfig = resolveServiceConfig({
+    ...toServiceConfigInput(options),
+    timeoutMs: effectiveTimeoutMs
+  });
   const resumeState = options.resumeRunId ? await loadTuningRunState(options.outputDir, options.resumeRunId) : undefined;
   if (resumeState && resumeState.applicationId !== options.applicationId) {
     throw new Error(
@@ -142,6 +146,7 @@ export async function runSearchTuneRunCommand(options: SearchTuneRunOptions): Pr
   const effectiveLlmConcurrency = options.llmConcurrency ?? resumeState?.llmConcurrency ?? 100;
   const runtimeConfig = resolveRuntimeConfig({
     ...toRuntimeConfigInput(options),
+    timeoutMs: effectiveTimeoutMs,
     applicationId: options.applicationId,
     datasetId: context.datasetId,
     sceneId: '',
