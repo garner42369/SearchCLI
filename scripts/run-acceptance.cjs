@@ -33,6 +33,7 @@ async function main() {
   await runTest('search-tune-help', testSearchTuneHelp);
   await runTest('search-run-requires-scene-help', testSearchRunRequiresSceneHelp);
   await runTest('search-tune-plan', testSearchTunePlan);
+  await runTest('search-tune-plan-spa', testSearchTunePlanSpa);
   await runTest('search-tune-query-generate-mock', testSearchTuneQueryGenerateMock);
   await runTest('search-tune-run-worker-pool-mock', testSearchTuneRunWorkerPoolMock);
   await runTest('search-tune-run-source-item-mock', testSearchTuneRunSourceItemMock);
@@ -237,8 +238,52 @@ async function testSearchTunePlan() {
   return `${command.prefix} search tune plan --application-id app-1 --dataset-id ds-1 --queries ${queriesPath} --json`;
 }
 
+async function testSearchTunePlanSpa() {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'viking-acceptance-tune-plan-spa-'));
+  const queriesPath = path.join(workspace, 'queries.jsonl');
+  fs.writeFileSync(
+    queriesPath,
+    [
+      JSON.stringify({ id: 'q1', text: 'training shirt', sourceItemIds: ['training-shirt-item-1'] }),
+      JSON.stringify({ id: 'q2', text: 'golf polo', sourceItemIds: ['golf-polo-item-1'] })
+    ].join('\n')
+  );
+
+  const { stdout } = await runCli([
+    'search',
+    'tune',
+    'plan',
+    '--application-id',
+    'app-1',
+    '--dataset-id',
+    'ds-1',
+    '--queries',
+    queriesPath,
+    '--query-count',
+    '2',
+    '--top-k',
+    '5',
+    '--max-strategies',
+    '6',
+    '--optimizer',
+    'spa',
+    '--json'
+  ]);
+  const payload = JSON.parse(stdout);
+  assert.equal(payload.optimizer, 'spa');
+  assert.equal(payload.estimated.strategyCount, 6);
+  assert.equal(payload.suggestedFirstPass.strategyCount, 6);
+  assert.ok(payload.strategies.some(strategy => /^spa-/.test(strategy.id)));
+  assert.deepEqual(payload.coverage.mode.values, ['UserDefined']);
+  assert.ok(payload.coverage.user_defined_recall_mode.values.includes('KeywordOnly'));
+  assert.ok(payload.coverage.user_defined_recall_mode.values.includes('SemanticOnly'));
+  assert.ok(payload.coverage.user_defined_recall_mode.values.includes('KeywordSemantic'));
+  return `${command.prefix} search tune plan --application-id app-1 --dataset-id ds-1 --queries ${queriesPath} --optimizer spa --json`;
+}
+
 async function testSearchTuneRunHelp() {
   const { stdout } = await runCli(['search', 'tune', 'run', '--help']);
+  assert.match(stdout, /--optimizer/);
   assert.match(stdout, /--search-concurrency/);
   assert.match(stdout, /Default: 18/);
   assert.match(stdout, /--llm-concurrency/);
@@ -445,6 +490,8 @@ async function testSearchTuneRunSourceItemMock() {
         '3',
         '--max-strategies',
         '1',
+        '--optimizer',
+        'spa',
         '--label-source',
         'source-item',
         '--output-dir',
@@ -467,6 +514,7 @@ async function testSearchTuneRunSourceItemMock() {
     );
     const payload = JSON.parse(stdout);
     assert.equal(payload.ok, true);
+    assert.equal(payload.optimizer, 'spa');
     assert.equal(payload.labelSource, 'source-item');
     assert.equal(payload.labelFailureCount, 0);
     assert.equal(serverState.searchRequests, 2);
@@ -476,6 +524,11 @@ async function testSearchTuneRunSourceItemMock() {
     assert.doesNotMatch(stderr, /Label available for query/);
     const recommendation = JSON.parse(fs.readFileSync(payload.recommendation, 'utf8'));
     assert.equal(recommendation.metrics.averageMrrAt10, 1);
+    const report = JSON.parse(fs.readFileSync(payload.reportJson, 'utf8'));
+    assert.equal(report.optimizer, 'spa');
+    assert.ok(report.strategies.some(strategy => /^spa-/.test(strategy.id)));
+    const state = JSON.parse(fs.readFileSync(payload.runState, 'utf8'));
+    assert.equal(state.optimizer, 'spa');
     return `${command.prefix} search tune run --application-id app-1 --dataset-id ds-1 --queries ${queriesPath} --label-source source-item --json`;
   } finally {
     await new Promise(resolve => server.close(resolve));

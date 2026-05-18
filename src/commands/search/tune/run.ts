@@ -27,6 +27,7 @@ export default class SearchTuneRun extends Command {
     'query-count': Flags.integer({ default: 100, description: 'Maximum number of queries to evaluate.' }),
     'top-k': Flags.integer({ default: 20, description: 'Number of search results judged per query and strategy.' }),
     'max-strategies': Flags.integer({ default: 30, description: 'Maximum number of candidate strategies to evaluate.' }),
+    optimizer: Flags.string({ default: 'matrix', options: ['matrix', 'spa'], description: 'Candidate strategy optimizer. Default: matrix.' }),
     'search-concurrency': Flags.integer({ default: 18, min: 1, description: 'Concurrent search requests. Default: 18.' }),
     'llm-concurrency': Flags.integer({ min: 1, description: 'Concurrent LLM relevance judgements. Default: 100.' }),
     'label-source': Flags.string({
@@ -61,6 +62,7 @@ export default class SearchTuneRun extends Command {
       queryCount: flags['query-count'],
       topK: flags['top-k'],
       maxStrategies: flags['max-strategies'],
+      optimizer: flags.optimizer as 'matrix' | 'spa',
       searchConcurrency: flags['search-concurrency'],
       llmConcurrency: flags['llm-concurrency'],
       labelSource: flags['label-source'] as 'llm' | 'source-item' | 'auto',

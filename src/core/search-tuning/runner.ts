@@ -12,7 +12,7 @@ import { appendLabel, buildLabelCacheKey, loadLabelCache, type LabelCache } from
 import { computeStrategyMetrics, chooseRecommendedStrategy } from './metrics';
 import { generateTuningQueries, loadTuningQueries, searchCaseToTuningQuery } from './query-generator';
 import { renderTuningMarkdownReport } from './report';
-import { generateSimilarityOnlyStrategies, summarizeStrategyCoverage } from './strategy-generator';
+import { generateTuningStrategies, summarizeStrategyCoverage } from './strategy-generator';
 import { sha256Hex, stableStringify } from './hash';
 import type {
   JudgeLabel,
@@ -24,7 +24,8 @@ import type {
   TuningRunStateShape,
   TuningSearchRanking,
   TuningStrategy,
-  TuningStrategyCoverage
+  TuningStrategyCoverage,
+  TuningStrategyOptimizer
 } from './types';
 import type { TuningContext } from './inspect';
 
@@ -46,6 +47,7 @@ export interface RunSearchTuningOptions {
   queryCount: number;
   topK: number;
   maxStrategies: number;
+  optimizer?: TuningStrategyOptimizer;
   searchConcurrency: number;
   llmConcurrency: number;
   labelSource: TuningLabelSource;
@@ -70,7 +72,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
   const setup = options.resumeRunId
     ? await loadExistingRunSetup(artifacts)
     : await createNewRunSetup({ ...options, runId, generatedAt, artifacts });
-  const { queries, strategies, querySource, strategyCoverage } = setup;
+  const { queries, strategies, querySource, strategyCoverage, optimizer } = setup;
   const labelSource = resolveEffectiveLabelSource(options.labelSource, queries);
   if (labelSource === 'llm' && !options.llmConfig) {
     throw new Error('LLM is required for --label-source llm. Configure LLM or use --label-source source-item with sourceItemIds queries.');
@@ -126,7 +128,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
 
   options.onProgress?.({
     phase: 'start',
-    message: `${options.resumeRunId ? 'Resuming' : 'Starting'} search tuning run ${runId} in ${runDir}: ${queries.length} queries, ${strategies.length} strategies, topK=${options.topK}, searchConcurrency=${searchConcurrency}, llmConcurrency=${llmConcurrency}, up to ${totalPossibleLabels} pointwise judgements.`,
+    message: `${options.resumeRunId ? 'Resuming' : 'Starting'} search tuning run ${runId} in ${runDir}: optimizer=${optimizer}, ${queries.length} queries, ${strategies.length} strategies, topK=${options.topK}, searchConcurrency=${searchConcurrency}, llmConcurrency=${llmConcurrency}, up to ${totalPossibleLabels} pointwise judgements.`,
     completed: completedSearches,
     total: totalSearches
   });
@@ -140,6 +142,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
     datasetId: options.context.datasetId,
     sceneId: options.context.sceneId,
     profile: 'similarity-only',
+    optimizer,
     querySource,
     labelSource,
     topK: options.topK,
@@ -236,6 +239,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
           datasetId: options.context.datasetId,
           sceneId: options.context.sceneId,
           querySource,
+          optimizer,
           labelSource,
           topK: options.topK,
           queryCount: queries.length,
@@ -318,6 +322,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
           datasetId: options.context.datasetId,
           sceneId: options.context.sceneId,
           querySource,
+          optimizer,
           labelSource,
           topK: options.topK,
           queryCount: queries.length,
@@ -361,6 +366,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
         datasetId: options.context.datasetId,
         sceneId: options.context.sceneId,
         querySource,
+        optimizer,
         labelSource,
         topK: options.topK,
         queryCount: queries.length,
@@ -393,6 +399,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
       datasetId: options.context.datasetId,
       sceneId: options.context.sceneId,
       profile: 'similarity-only',
+      optimizer,
       querySource,
       labelSource,
       topK: options.topK,
@@ -438,6 +445,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
     datasetId: options.context.datasetId,
     sceneId: options.context.sceneId,
     profile: 'similarity-only',
+    optimizer,
     querySource,
     labelSource,
     topK: options.topK,
@@ -483,6 +491,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
     datasetId: options.context.datasetId,
     sceneId: options.context.sceneId,
     profile: 'similarity-only',
+    optimizer,
     querySource,
     labelSource,
     topK: options.topK,
@@ -527,6 +536,7 @@ function buildRecommendation(report: TuningRunReportShape): Record<string, unkno
   const metric = report.metrics.find(item => item.strategyId === report.recommendedStrategyId);
   return {
     run_id: report.runId,
+    optimizer: report.optimizer,
     recommended_strategy_id: report.recommendedStrategyId,
     search_dynamic: strategy?.searchDynamic,
     request_params: strategy?.requestParams,
@@ -586,6 +596,7 @@ interface TuningRunSetup {
   queries: TuningQuery[];
   strategies: TuningStrategy[];
   querySource: 'user-provided' | 'generated';
+  optimizer: TuningStrategyOptimizer;
   strategyCoverage: TuningStrategyCoverage;
 }
 
@@ -622,6 +633,7 @@ interface CheckpointStateBase {
   datasetId: string;
   sceneId?: string;
   querySource: 'user-provided' | 'generated';
+  optimizer: TuningStrategyOptimizer;
   labelSource: EffectiveTuningLabelSource;
   topK: number;
   queryCount: number;
@@ -645,7 +657,8 @@ async function createNewRunSetup(
   }
 ): Promise<TuningRunSetup> {
   const queries = await resolveQueries(options);
-  const strategies = generateSimilarityOnlyStrategies(options.maxStrategies);
+  const optimizer = options.optimizer ?? 'matrix';
+  const strategies = generateTuningStrategies({ optimizer, maxStrategies: options.maxStrategies });
   const strategyCoverage = summarizeStrategyCoverage(strategies);
   const querySource = options.queriesFile ? 'user-provided' : 'generated';
 
@@ -663,6 +676,7 @@ async function createNewRunSetup(
     queries,
     strategies,
     querySource,
+    optimizer,
     strategyCoverage
   };
 }
@@ -677,6 +691,7 @@ async function loadExistingRunSetup(artifacts: Record<string, string>): Promise<
     queries,
     strategies,
     querySource: state.querySource,
+    optimizer: state.optimizer ?? 'matrix',
     strategyCoverage
   };
 }
@@ -832,6 +847,7 @@ async function writeSearchCheckpoint(input: {
     datasetId: input.state.datasetId,
     sceneId: input.state.sceneId,
     profile: 'similarity-only',
+    optimizer: input.state.optimizer,
     querySource: input.state.querySource,
     labelSource: input.state.labelSource,
     topK: input.state.topK,
