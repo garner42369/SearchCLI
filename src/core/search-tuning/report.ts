@@ -16,6 +16,7 @@ export function renderTuningMarkdownReport(report: TuningRunReportShape): string
   lines.push(`- Dataset ID: \`${report.datasetId}\``);
   if (report.sceneId) lines.push(`- Scene ID: \`${report.sceneId}\``);
   lines.push(`- Profile: \`${report.profile}\``);
+  lines.push(`- Optimizer: \`${report.optimizer}\``);
   lines.push(`- Query Source: \`${report.querySource}\``);
   lines.push(`- Label Source: \`${report.labelSource}\``);
   lines.push(`- Queries: ${report.queryCount}`);

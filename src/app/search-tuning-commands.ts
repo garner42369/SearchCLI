@@ -14,7 +14,7 @@ import { inspectTuningContext } from '../core/search-tuning/inspect';
 import { loadTuningReport, loadTuningRunState, runSearchTuning, type TuningProgressEvent } from '../core/search-tuning/runner';
 import { generateTuningQueries, generateTuningQuerySet } from '../core/search-tuning/query-generator';
 import { stableStringify } from '../core/search-tuning/hash';
-import type { TuningLabelSource } from '../core/search-tuning/types';
+import type { TuningLabelSource, TuningStrategyOptimizer } from '../core/search-tuning/types';
 
 export interface SearchTuneServiceOptions extends ServiceConfigInput {
   data?: string;
@@ -28,6 +28,7 @@ export interface SearchTuneRunOptions extends SearchTuneServiceOptions {
   queryCount?: number;
   topK?: number;
   maxStrategies?: number;
+  optimizer?: TuningStrategyOptimizer;
   searchConcurrency?: number;
   llmConcurrency?: number;
   labelSource?: TuningLabelSource;
@@ -47,6 +48,7 @@ export interface SearchTunePlanOptions extends SearchTuneServiceOptions {
   queryCount?: number;
   topK?: number;
   maxStrategies?: number;
+  optimizer?: TuningStrategyOptimizer;
   profile?: string;
 }
 
@@ -156,6 +158,7 @@ export async function runSearchTuneRunCommand(options: SearchTuneRunOptions): Pr
   const effectiveTopK = resumeState?.topK ?? options.topK ?? 20;
   const effectiveQueryCount = resumeState?.queryCount ?? options.queryCount ?? 100;
   const effectiveMaxStrategies = resumeState?.strategyCount ?? options.maxStrategies ?? 30;
+  const effectiveOptimizer = resumeState?.optimizer ?? options.optimizer ?? 'matrix';
   const effectiveSearchConcurrency = resumeState?.searchConcurrency ?? options.searchConcurrency ?? 18;
   const effectiveLlmConcurrency = options.llmConcurrency ?? resumeState?.llmConcurrency ?? 100;
   const runtimeConfig = resolveRuntimeConfig({
@@ -174,6 +177,7 @@ export async function runSearchTuneRunCommand(options: SearchTuneRunOptions): Pr
     queryCount: effectiveQueryCount,
     topK: effectiveTopK,
     maxStrategies: effectiveMaxStrategies,
+    optimizer: effectiveOptimizer,
     searchConcurrency: effectiveSearchConcurrency,
     llmConcurrency: effectiveLlmConcurrency,
     labelSource: effectiveLabelSource,
@@ -194,6 +198,7 @@ export async function runSearchTuneRunCommand(options: SearchTuneRunOptions): Pr
     recommendedRequestParams: report.artifacts.recommendedRequestParams,
     performanceSummary: report.artifacts.performanceSummary,
     performance: report.performance,
+    optimizer: report.optimizer,
     runState: report.artifacts.runState,
     partialMetrics: report.artifacts.partialMetrics,
     rankings: report.artifacts.rankings,
@@ -224,7 +229,8 @@ export async function runSearchTunePlanCommand(options: SearchTunePlanOptions): 
     queriesFile: options.queries,
     queryCount: options.queryCount ?? 100,
     topK: options.topK ?? 20,
-    maxStrategies: options.maxStrategies ?? 30
+    maxStrategies: options.maxStrategies ?? 30,
+    optimizer: options.optimizer ?? 'matrix'
   });
   await printOutput(plan);
 }

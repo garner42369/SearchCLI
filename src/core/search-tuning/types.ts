@@ -5,6 +5,7 @@ import type { SearchDynamic, SearchResultItem } from '../types';
 
 export type TuningLabelSource = 'llm' | 'source-item' | 'auto';
 export type EffectiveTuningLabelSource = 'llm' | 'source-item';
+export type TuningStrategyOptimizer = 'matrix' | 'spa';
 
 export interface TuningQuery {
   id: string;
@@ -34,6 +35,7 @@ export type TuningStrategyCoverage = Record<string, TuningParameterCoverageEntry
 
 export interface TuningPlanShape {
   profile: 'similarity-only';
+  optimizer: TuningStrategyOptimizer;
   applicationId: string;
   datasetId?: string;
   sceneId?: string;
@@ -156,6 +158,7 @@ export interface TuningRunReportShape {
   datasetId: string;
   sceneId?: string;
   profile: 'similarity-only';
+  optimizer: TuningStrategyOptimizer;
   querySource: 'user-provided' | 'generated';
   labelSource: EffectiveTuningLabelSource;
   topK: number;
@@ -180,6 +183,7 @@ export interface TuningRunStateShape {
   datasetId: string;
   sceneId?: string;
   profile: 'similarity-only';
+  optimizer?: TuningStrategyOptimizer;
   querySource: 'user-provided' | 'generated';
   labelSource: EffectiveTuningLabelSource;
   topK: number;

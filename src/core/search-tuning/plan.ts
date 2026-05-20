@@ -3,9 +3,9 @@
 
 import path from 'node:path';
 import { loadSearchCases } from '../files';
-import { generateSimilarityOnlyStrategies, SIMILARITY_EXCLUDED_PARAMETERS, SIMILARITY_TUNED_PARAMETERS, summarizeStrategyCoverage } from './strategy-generator';
+import { generateTuningStrategies, SIMILARITY_EXCLUDED_PARAMETERS, SIMILARITY_TUNED_PARAMETERS, summarizeStrategyCoverage } from './strategy-generator';
 import { loadTuningQueries, searchCaseToTuningQuery } from './query-generator';
-import type { TuningPlanShape, TuningQuery } from './types';
+import type { TuningPlanShape, TuningQuery, TuningStrategyOptimizer } from './types';
 
 export interface BuildSearchTuningPlanOptions {
   applicationId: string;
@@ -15,10 +15,12 @@ export interface BuildSearchTuningPlanOptions {
   queryCount: number;
   topK: number;
   maxStrategies: number;
+  optimizer?: TuningStrategyOptimizer;
 }
 
 export async function buildSearchTuningPlan(options: BuildSearchTuningPlanOptions): Promise<TuningPlanShape> {
-  const strategies = generateSimilarityOnlyStrategies(options.maxStrategies);
+  const optimizer = options.optimizer ?? 'matrix';
+  const strategies = generateTuningStrategies({ optimizer, maxStrategies: options.maxStrategies });
   const queryStats = options.queriesFile
     ? await loadQueryStats(options.queriesFile, options.queryCount)
     : { queryCount: options.queryCount, sourceItemQueryCount: 0 };
@@ -30,6 +32,7 @@ export async function buildSearchTuningPlan(options: BuildSearchTuningPlanOption
 
   return {
     profile: 'similarity-only',
+    optimizer,
     applicationId: options.applicationId,
     datasetId: options.datasetId,
     sceneId: options.sceneId,
