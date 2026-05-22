@@ -9,11 +9,13 @@ import { resolveServiceConfig, type ServiceConfigInput } from '../core/service-c
 import { writeText } from '../core/files';
 import { VikingOpenApiClient } from '../core/openapi-client';
 import { buildSceneApplyDraft, withSceneId } from '../core/search-tuning/apply';
+import { compareSearchScenes, compareTuningRuns } from '../core/search-tuning/compare';
 import { buildSearchTuningPlan } from '../core/search-tuning/plan';
 import { inspectTuningContext } from '../core/search-tuning/inspect';
 import { loadTuningReport, loadTuningRunState, runSearchTuning, type TuningProgressEvent } from '../core/search-tuning/runner';
 import { generateTuningQueries, generateTuningQuerySet } from '../core/search-tuning/query-generator';
 import { stableStringify } from '../core/search-tuning/hash';
+import { validateTuningQueryFile } from '../core/search-tuning/validate';
 import type { TuningLabelSource, TuningStrategyOptimizer } from '../core/search-tuning/types';
 
 export interface SearchTuneServiceOptions extends ServiceConfigInput {
@@ -66,6 +68,24 @@ export interface SearchTuneQueryGenerateOptions extends SearchTuneServiceOptions
 
 export interface SearchTuneReportOptions extends SearchTuneServiceOptions {
   runId: string;
+  outputDir?: string;
+}
+
+export interface SearchTuneValidateOptions extends SearchTuneServiceOptions {
+  queries: string;
+  queryCount?: number;
+}
+
+export interface SearchTuneCompareOptions extends SearchTuneServiceOptions {
+  applicationId?: string;
+  datasetId?: string;
+  runIds?: string[];
+  sceneIds?: string[];
+  queries?: string;
+  topK?: number;
+  searchConcurrency?: number;
+  baselineRunId?: string;
+  baselineSceneId?: string;
   outputDir?: string;
 }
 
@@ -316,6 +336,62 @@ export async function runSearchTuneQueryGenerateCommand(options: SearchTuneQuery
 export async function runSearchTuneReportCommand(options: SearchTuneReportOptions): Promise<void> {
   const report = await loadTuningReport(options.outputDir, options.runId);
   await printOutput(report);
+}
+
+export async function runSearchTuneValidateCommand(options: SearchTuneValidateOptions): Promise<void> {
+  const result = await validateTuningQueryFile({
+    queriesFile: options.queries,
+    queryCount: options.queryCount
+  });
+  await printOutput(result);
+  if (!result.ok) {
+    process.exitCode = 1;
+  }
+}
+
+export async function runSearchTuneCompareCommand(options: SearchTuneCompareOptions): Promise<void> {
+  const runIds = options.runIds ?? [];
+  const sceneIds = options.sceneIds ?? [];
+  if (runIds.length > 0 && sceneIds.length > 0) {
+    throw new Error('Use either --run-ids for offline report comparison or --scene-ids for online scene comparison, not both.');
+  }
+  if (runIds.length > 0) {
+    const result = await compareTuningRuns({
+      runIds,
+      outputDir: options.outputDir,
+      baselineRunId: options.baselineRunId
+    });
+    await printOutput(result);
+    return;
+  }
+  if (sceneIds.length > 0) {
+    if (!options.applicationId) throw new Error('--application-id is required with --scene-ids.');
+    if (!options.datasetId) throw new Error('--dataset-id is required with --scene-ids.');
+    if (!options.queries) throw new Error('--queries is required with --scene-ids.');
+    const runtimeConfig = resolveRuntimeConfig({
+      ...toRuntimeConfigInput({
+        ...options,
+        applicationId: options.applicationId,
+        datasetId: options.datasetId
+      }),
+      timeoutMs: options.timeoutMs,
+      applicationId: options.applicationId,
+      datasetId: options.datasetId,
+      sceneId: '',
+      defaultPageSize: options.topK ?? 20
+    });
+    const result = await compareSearchScenes({
+      runtimeConfig,
+      queriesFile: options.queries,
+      sceneIds,
+      topK: options.topK ?? 20,
+      searchConcurrency: options.searchConcurrency ?? 18,
+      baselineSceneId: options.baselineSceneId
+    });
+    await printOutput(result);
+    return;
+  }
+  throw new Error('Provide --run-ids <id,id> or --scene-ids <id,id>.');
 }
 
 export async function runSearchTuneApplyCommand(options: SearchTuneApplyOptions): Promise<void> {
