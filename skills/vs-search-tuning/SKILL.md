@@ -5,7 +5,7 @@ category: search
 applies_to: codex, agents, external-agent
 requires_cli: ">=0.1.0"
 keywords: search tuning, search evaluation, llm judge, ndcg, query generation, similarity tuning
-commands: llm login, llm import-env, llm status, search tune llm-check, search tune query-generate, search tune plan, search tune run, search tune report, search tune apply, app status, doctor
+commands: llm login, llm import-env, llm status, search tune llm-check, search tune validate, search tune query-generate, search tune plan, search tune run, search tune report, search tune compare, search tune apply, app status, doctor
 ---
 
 # Viking Search Tuning
@@ -29,10 +29,12 @@ This first version is for text-query similarity only. It fixes `mode=UserDefined
 
 - `llm login` / `llm import-env` / `llm status`: configure and verify OpenAI-compatible LLM credentials without exposing API keys in chat or plain config
 - `search tune llm-check`: verify CLI-managed LLM configuration
+- `search tune validate`: validate a query set locally before planning or running; reports schema issues, duplicate ids/text, sourceItemIds coverage, query type skew, and a label-source recommendation
 - `search tune query-generate`: generate a reusable synthetic query set from paged dataset samples with batched concurrent LLM calls when the user has no query set
 - `search tune plan`: show query source, candidate strategies, estimated requests/labels, parameter coverage, source-item coverage, warnings, and suggested first-pass size before running
 - `search tune run`: generate or load queries, run candidate search strategies, label top results, compute metrics, and write artifacts; supports `--label-source llm|source-item|auto`, `--llm-retries`, `--max-label-failure-rate`, and `--verbose`; use `--resume-run-id <run-id>` to continue an interrupted run
 - `search tune report`: read a previous tuning report
+- `search tune compare`: compare completed tuning runs with `--run-ids`, or compare existing scenes online with `--scene-ids --queries` using source-item silver labels
 - `search tune apply`: create a new candidate search scene from a completed tuning report recommendation
 - `app status` / `doctor`: verify app and local environment readiness
 
@@ -58,28 +60,35 @@ This first version is for text-query similarity only. It fixes `mode=UserDefined
 5. If the user has no query set, generate one first:
    - `vs search tune query-generate --application-id <id> --dataset-id <dataset> --query-count 100 --sample-size 200 --query-batch-size 10 --llm-concurrency 100 --timeout-ms 120000 --json`
    Show the returned `sampleQueries`, `typeCounts`, `requestedQueryCount`, `actualQueryCount`, `shortfall`, and `warnings` to the user. If `ok=false`, do not continue to `plan` or `run`; retry with larger timeout/sample size or ask for a real query set. Use the returned `queryFile` only after the user accepts the query set for first-pass tuning.
-6. Run a plan before any expensive evaluation:
+6. Validate the accepted query set before planning:
+   - `vs search tune validate --queries <file> --json`
+   Summarize `ok`, `validQueryCount`, `duplicateIdCount`, `sourceItemQueryCoverage`, `labelSourceRecommendation`, and any blocking `problems`. If `ok=false`, fix or regenerate the query set before continuing.
+7. Run a plan before any expensive evaluation:
    - with user queries: `vs search tune plan --application-id <id> --dataset-id <dataset> --queries <file> --profile similarity-only --json`
    - with generated queries: use the `queryFile` returned by `query-generate`
    Summarize the estimated search requests, max pointwise LLM judgements, source-item coverage, suggested first-pass size, warnings, and parameter coverage.
-7. Run tuning only after the plan is acceptable:
+8. Run tuning only after the plan is acceptable:
    - fast first pass when the query file has enough `sourceItemIds`: `vs search tune run --application-id <id> --dataset-id <dataset> --queries <file> --profile similarity-only --label-source source-item --search-concurrency 18 --timeout-ms 120000 --json`
    - LLM judgement run: `vs search tune run --application-id <id> --dataset-id <dataset> --queries <file> --profile similarity-only --label-source llm --search-concurrency 18 --llm-concurrency 100 --llm-retries 1 --max-label-failure-rate 0.01 --timeout-ms 120000`
    - with generated queries: use the `queryFile` returned by `query-generate`
    Use the command form above for first-pass tuning unless the user explicitly asks for a different evaluation scope. Search requests default to 18-way concurrency, and LLM judgements default to 100-way concurrency. LLM judging runs as a worker pool, so completed labels are checkpointed while slower LLM requests continue in their own worker slots.
-8. While a run is active, use the artifact paths from progress output if troubleshooting is needed:
+9. While a run is active, use the artifact paths from progress output if troubleshooting is needed:
    - `run-state.json`: current status, completed searches, labels, and resume metadata
    - `partial-metrics.json`: partial metrics from completed query/strategy pairs
    - `performance-summary.json`: elapsed time, search/LLM wall time, average and percentile latency, throughput, cache hits, label failures, and configured concurrency
    - `rankings.jsonl`, `labels-used.jsonl`, and `label-failures.jsonl`: completed rankings, labels used by the run, and tolerated/diagnostic label failures
    If the process is interrupted, resume with `vs search tune run --application-id <id> --resume-run-id <run-id>`.
-9. Read and summarize the generated report:
+10. Read and summarize the generated report:
    - `vs search tune report --run-id <run-id> --json`
-10. Explain the recommended strategy, metric deltas, parameter coverage, and risk notes. Treat the output as a recommendation.
-11. If the user asks to materialize the recommendation as a candidate scene, inspect first:
+11. Explain the recommended strategy, metric deltas, parameter coverage, and risk notes. Treat the output as a recommendation.
+12. If the user asks to compare multiple completed runs or candidate scenes:
+   - completed runs: `vs search tune compare --run-ids <run_a,run_b> --json`
+   - online scene source-item compare: `vs search tune compare --application-id <id> --dataset-id <dataset> --scene-ids <scene_a,scene_b> --queries <file> --json`
+   For scene compare, every query must include `sourceItemIds`; otherwise use `search tune run` with LLM labels and compare completed run IDs.
+13. If the user asks to materialize the recommendation as a candidate scene, inspect first:
    - `vs search tune apply --application-id <id> --run-id <run-id> --dry-run --json`
    Explain `unappliedRequestParams`; request-only params such as `query_keyword_match_percent` are not persisted in scene config.
-12. If the user accepts the dry-run payload, create a new candidate scene:
+14. If the user accepts the dry-run payload, create a new candidate scene:
    - `vs search tune apply --application-id <id> --run-id <run-id> --confirm-create-scene --json`
 
 ## Customer Environment Principle
@@ -93,6 +102,7 @@ This first version is for text-query similarity only. It fixes `mode=UserDefined
 ## Constraints
 
 - Do not run tuning before asking the user whether they have a query set.
+- Do not run tuning before `search tune validate` has checked the accepted query file, unless the user explicitly asks to skip validation.
 - Do not run tuning before `search tune plan` has been shown and summarized.
 - Do not let `search tune run` auto-generate queries during agent-led tuning. If the user has no query set, run `search tune query-generate`, show query samples, and then pass the generated `queryFile` to `plan` and `run`.
 - Do not continue from a generated query set when `query-generate` returns `ok=false`; inspect `warnings` and retry generation before asking the user.

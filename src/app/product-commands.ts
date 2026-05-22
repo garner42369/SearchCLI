@@ -44,10 +44,12 @@ import {
 import {
   runSearchTuneLlmCheckCommand,
   runSearchTuneApplyCommand,
+  runSearchTuneCompareCommand,
   runSearchTunePlanCommand,
   runSearchTuneQueryGenerateCommand,
   runSearchTuneReportCommand,
-  runSearchTuneRunCommand
+  runSearchTuneRunCommand,
+  runSearchTuneValidateCommand
 } from './search-tuning-commands';
 
 export interface ServiceCommandOptions extends ServiceConfigInput {
@@ -1459,11 +1461,13 @@ COMMON FLAGS
         'vs search scene update --application-id <id> --scene-id <id> [--config @scene.json] [--search-config @search.json] [--query-completion-config @qc.json] [--want-to-search-config @wts.json] [--overview-config @overview.json] [service flags]',
         'vs search scene delete --application-id <id> --scene-id <id> [service flags]',
         'vs search tune llm-check [--live] [service flags]',
+        'vs search tune validate --queries <file> [--query-count <n>] [service flags]',
         'vs search tune plan --application-id <id> [--dataset-id <id>] [--queries <file>] [--profile similarity-only] [service flags]',
         'vs search tune query-generate --application-id <id> [--dataset-id <id>] [--query-count <n>] [--sample-size <n>] [--query-batch-size <n>] [--llm-concurrency <n>] [service flags]',
         'vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--label-source <llm|source-item|auto>] [--profile similarity-only] [--search-concurrency <n>] [--llm-concurrency <n>] [--timeout-ms <ms>] [service flags]',
         'vs search tune apply --application-id <id> --run-id <id> [--dry-run | --confirm-create-scene] [service flags]',
-        'vs search tune report --run-id <id> [--output-dir <dir>] [service flags]'
+        'vs search tune report --run-id <id> [--output-dir <dir>] [service flags]',
+        'vs search tune compare (--run-ids <a,b> | --application-id <id> --dataset-id <id> --scene-ids <a,b> --queries <file>) [service flags]'
       ]
     )}
 
@@ -1946,6 +1950,21 @@ EXAMPLES
   vs search scene update --application-id 123 --scene-id abc --config @scene.json
   vs search scene update --application-id 123 --scene-id abc --search-config @search.json
   vs search scene update --application-id 123 --scene-id abc --data @payload.json`,
+    tune: `Evaluate and tune text search similarity.
+
+USAGE
+  vs search tune llm-check [--live] [service flags]
+  vs search tune validate --queries <file> [--query-count <n>] [service flags]
+  vs search tune query-generate --application-id <id> [--dataset-id <id>] [--query-count <n>] [service flags]
+  vs search tune plan --application-id <id> [--dataset-id <id>] [--queries <file>] [service flags]
+  vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [service flags]
+  vs search tune report --run-id <id> [--output-dir <dir>] [service flags]
+  vs search tune compare (--run-ids <a,b> | --application-id <id> --dataset-id <id> --scene-ids <a,b> --queries <file>) [service flags]
+  vs search tune apply --application-id <id> --run-id <id> [--dry-run | --confirm-create-scene] [service flags]
+
+DESCRIPTION
+  First-version tuning covers text-query similarity only. It fixes mode=UserDefined and excludes
+  rerank, personalization, hotness, boost/bury rules, sort rules, serving controls, and business rules.`,
     'tune:llm-check': `Check the LLM configuration used by search tuning.
 
 USAGE
@@ -1958,6 +1977,23 @@ DESCRIPTION
 EXAMPLES
   vs search tune llm-check
   vs search tune llm-check --live --json`,
+    'tune:validate': `Validate a search tuning query set.
+
+USAGE
+  vs search tune validate --queries <file> [--query-count <n>] [service flags]
+
+DESCRIPTION
+  Checks JSON, JSONL, or CSV query sets locally without calling search or LLM services. Reports
+  parse/schema errors, duplicate ids, duplicate query text, sourceItemIds coverage, query type
+  distribution, and the recommended label source for a tuning run.
+
+KEY FLAGS
+  --queries      Query set file to validate.
+  --query-count  Maximum number of queries to inspect.
+
+EXAMPLES
+  vs search tune validate --queries ./queries.jsonl
+  vs search tune validate --queries ./queries.jsonl --query-count 100 --json`,
     'tune:plan': `Plan first-version automated search evaluation and similarity tuning.
 
 USAGE
@@ -2065,7 +2101,31 @@ USAGE
   vs search tune report --run-id <id> [--output-dir <dir>] [service flags]
 
 EXAMPLES
-  vs search tune report --run-id run_2026-05-12T00-00-00Z`
+  vs search tune report --run-id run_2026-05-12T00-00-00Z`,
+    'tune:compare': `Compare completed tuning runs or existing search scenes.
+
+USAGE
+  vs search tune compare --run-ids <run_a,run_b> [--baseline-run-id <run>] [--output-dir <dir>] [service flags]
+  vs search tune compare --application-id <id> --dataset-id <id> --scene-ids <scene_a,scene_b> --queries <file> [--baseline-scene-id <scene>] [--top-k <n>] [--search-concurrency <n>] [service flags]
+
+DESCRIPTION
+  Offline mode compares completed tuning reports by recommended strategy metrics. Online scene mode
+  sends the same query set to multiple scenes and evaluates them with source-item silver labels.
+  Scene mode requires every query to include sourceItemIds.
+
+KEY FLAGS
+  --run-ids              Comma-separated completed tuning run IDs.
+  --scene-ids            Comma-separated search scene IDs.
+  --application-id       Target application ID. Required with --scene-ids.
+  --dataset-id           Dataset ID. Required with --scene-ids.
+  --queries              Query set file. Required with --scene-ids.
+  --baseline-run-id      Baseline run for delta metrics. Defaults to the first --run-ids value.
+  --baseline-scene-id    Baseline scene for delta metrics. Defaults to the first --scene-ids value.
+  --search-concurrency   Concurrent online search requests for scene mode. Default: 18.
+
+EXAMPLES
+  vs search tune compare --run-ids run_a,run_b
+  vs search tune compare --application-id 123 --dataset-id 456 --scene-ids scene_a,scene_b --queries ./queries.jsonl`
   };
 
   console.log(helpByAction[`${action}:${subAction ?? ''}`] ?? helpByAction[action] ?? `Unknown search subcommand: ${[action, subAction].filter(Boolean).join(' ')}`);
@@ -2460,8 +2520,9 @@ async function runSearchCli(argv: string[]): Promise<void> {
     printSearchCommandHelp(action, argv[1]);
     return;
   }
-  if (action === 'tune' && hasHelpFlag(argv.slice(2))) {
-    printSearchCommandHelp(action, argv[1]);
+  if (action === 'tune' && hasHelpFlag(argv.slice(1))) {
+    const subAction = argv[1];
+    printSearchCommandHelp(action, subAction === '--help' || subAction === '-h' ? undefined : subAction);
     return;
   }
   const values = parseStandaloneOptions(argv.slice(1));
@@ -2533,6 +2594,14 @@ async function runSearchCli(argv: string[]): Promise<void> {
             live: optionalBoolean(values.live)
           });
           return;
+        case 'validate':
+          await runSearchTuneValidateCommand({
+            ...serviceOptions,
+            projectName: optionalString(values['project-name']),
+            queries: requiredString(values.queries, '--queries'),
+            queryCount: parseOptionalInt(optionalString(values['query-count']))
+          });
+          return;
         case 'plan':
           await runSearchTunePlanCommand({
             ...serviceOptions,
@@ -2601,6 +2670,22 @@ async function runSearchCli(argv: string[]): Promise<void> {
             ...serviceOptions,
             projectName: optionalString(values['project-name']),
             runId: requiredString(values['run-id'], '--run-id'),
+            outputDir: optionalString(values['output-dir'])
+          });
+          return;
+        case 'compare':
+          await runSearchTuneCompareCommand({
+            ...serviceOptions,
+            projectName: optionalString(values['project-name']),
+            applicationId: optionalString(values['application-id']),
+            datasetId: optionalString(values['dataset-id']),
+            runIds: splitCommaList(optionalString(values['run-ids'])),
+            sceneIds: splitCommaList(optionalString(values['scene-ids'])),
+            queries: optionalString(values.queries),
+            topK: parseOptionalInt(optionalString(values['top-k'])),
+            searchConcurrency: parseOptionalInt(optionalString(values['search-concurrency'])),
+            baselineRunId: optionalString(values['baseline-run-id']),
+            baselineSceneId: optionalString(values['baseline-scene-id']),
             outputDir: optionalString(values['output-dir'])
           });
           return;
@@ -2786,7 +2871,11 @@ function parseStandaloneOptions(argv: string[]) {
       'max-label-failure-rate': { type: 'string' },
       verbose: { type: 'boolean' },
       'run-id': { type: 'string' },
+      'run-ids': { type: 'string' },
       'resume-run-id': { type: 'string' },
+      'scene-ids': { type: 'string' },
+      'baseline-run-id': { type: 'string' },
+      'baseline-scene-id': { type: 'string' },
       'scene-name': { type: 'string' },
       'scene-description': { type: 'string' },
       'confirm-create-scene': { type: 'boolean' },
