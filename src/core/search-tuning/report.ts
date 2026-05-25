@@ -19,6 +19,11 @@ export function renderTuningMarkdownReport(report: TuningRunReportShape): string
   lines.push(`- Optimizer: \`${report.optimizer}\``);
   lines.push(`- Query Source: \`${report.querySource}\``);
   lines.push(`- Label Source: \`${report.labelSource}\``);
+  lines.push(`- Judge Input: \`${report.judgeInput ?? 'text'}\``);
+  if (report.judgeInput === 'text-image') {
+    lines.push(`- Max Judge Images: ${report.maxJudgeImages ?? 1}`);
+    lines.push(`- Image Index Fields: ${(report.imageIndexFields ?? []).map(field => `\`${field}\``).join(', ') || '(none)'}`);
+  }
   lines.push(`- Queries: ${report.queryCount}`);
   lines.push(`- Strategies: ${report.strategyCount}`);
   lines.push(`- Labels Used: ${report.labelCount}`);
@@ -98,7 +103,11 @@ export function renderTuningMarkdownReport(report: TuningRunReportShape): string
   lines.push('');
   lines.push('## Notes');
   lines.push('');
-  lines.push('- This first version evaluates text-query similarity only.');
+  if (report.judgeInput === 'text-image') {
+    lines.push('- Text-image judge mode uses only image URL fields returned by `GetAppDataConfig.ImageIndexFields`; it is opt-in and defaults to text-only judging.');
+  } else {
+    lines.push('- This first version evaluates text-query similarity only by default.');
+  }
   lines.push('- Rerank, personalization, hotness, boost/bury rules, and business operating rules are intentionally out of scope.');
   if (report.labelSource === 'source-item') {
     lines.push('- Source-item labels are fast silver labels derived from query `sourceItemIds`; use LLM or human labels for higher-confidence validation.');

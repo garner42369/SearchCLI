@@ -18,6 +18,7 @@ import type {
   JudgeLabel,
   EffectiveTuningLabelSource,
   TuningPerformanceSummary,
+  TuningJudgeInput,
   TuningLabelSource,
   TuningQuery,
   TuningRunReportShape,
@@ -51,6 +52,8 @@ export interface RunSearchTuningOptions {
   searchConcurrency: number;
   llmConcurrency: number;
   labelSource: TuningLabelSource;
+  judgeInput?: TuningJudgeInput;
+  maxJudgeImages?: number;
   llmRetries: number;
   maxLabelFailureRate: number;
   outputDir?: string;
@@ -74,11 +77,23 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
     : await createNewRunSetup({ ...options, runId, generatedAt, artifacts });
   const { queries, strategies, querySource, strategyCoverage, optimizer } = setup;
   const labelSource = resolveEffectiveLabelSource(options.labelSource, queries);
+  const judgeInput = setup.judgeInput ?? options.judgeInput ?? 'text';
+  const maxJudgeImages = setup.maxJudgeImages ?? Math.max(1, Math.floor(options.maxJudgeImages ?? 1));
+  const imageIndexFields = options.context.imageIndexFields ?? [];
   if (labelSource === 'llm' && !options.llmConfig) {
     throw new Error('LLM is required for --label-source llm. Configure LLM or use --label-source source-item with sourceItemIds queries.');
   }
+  if (labelSource === 'llm' && judgeInput === 'text-image' && imageIndexFields.length === 0) {
+    throw new Error('Image judge was requested with --judge-input text-image, but GetAppDataConfig returned no ImageIndexFields for this app+dataset.');
+  }
   const judgeProfileHash =
-    labelSource === 'source-item' ? buildSourceItemJudgeProfileHash() : buildJudgeProfileHash(options.llmConfig as LlmClientConfig);
+    labelSource === 'source-item'
+      ? buildSourceItemJudgeProfileHash()
+      : buildJudgeProfileHash(options.llmConfig as LlmClientConfig, {
+          judgeInput,
+          imageIndexFields,
+          maxJudgeImages
+        });
   const rankings = options.resumeRunId ? await loadExistingRankings(artifacts.rankings) : [];
   const labelsUsed = options.resumeRunId ? await loadExistingLabels(artifacts.labelsUsed) : new Map<string, JudgeLabel>();
   const completedRankingKeys = new Set(rankings.map(ranking => buildRankingKey(ranking.strategyId, ranking.queryId)));
@@ -128,7 +143,7 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
 
   options.onProgress?.({
     phase: 'start',
-    message: `${options.resumeRunId ? 'Resuming' : 'Starting'} search tuning run ${runId} in ${runDir}: optimizer=${optimizer}, ${queries.length} queries, ${strategies.length} strategies, topK=${options.topK}, searchConcurrency=${searchConcurrency}, llmConcurrency=${llmConcurrency}, up to ${totalPossibleLabels} pointwise judgements.`,
+    message: `${options.resumeRunId ? 'Resuming' : 'Starting'} search tuning run ${runId} in ${runDir}: optimizer=${optimizer}, judgeInput=${judgeInput}, ${queries.length} queries, ${strategies.length} strategies, topK=${options.topK}, searchConcurrency=${searchConcurrency}, llmConcurrency=${llmConcurrency}, up to ${totalPossibleLabels} pointwise judgements.`,
     completed: completedSearches,
     total: totalSearches
   });
@@ -145,6 +160,8 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
     optimizer,
     querySource,
     labelSource,
+    judgeInput,
+    maxJudgeImages,
     topK: options.topK,
     queryCount: queries.length,
     strategyCount: strategies.length,
@@ -241,6 +258,8 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
           querySource,
           optimizer,
           labelSource,
+          judgeInput,
+          maxJudgeImages,
           topK: options.topK,
           queryCount: queries.length,
           strategyCount: strategies.length,
@@ -288,6 +307,9 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
         queries,
         datasetId: options.context.datasetId,
         judgeProfileHash,
+        judgeInput,
+        imageIndexFields,
+        maxJudgeImages,
         labelsUsed,
         cachedLabels: labelCache.labels
       });
@@ -324,6 +346,8 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
           querySource,
           optimizer,
           labelSource,
+          judgeInput,
+          maxJudgeImages,
           topK: options.topK,
           queryCount: queries.length,
           strategyCount: strategies.length,
@@ -368,6 +392,8 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
         querySource,
         optimizer,
         labelSource,
+        judgeInput,
+        maxJudgeImages,
         topK: options.topK,
         queryCount: queries.length,
         strategyCount: strategies.length,
@@ -402,6 +428,8 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
       optimizer,
       querySource,
       labelSource,
+      judgeInput,
+      maxJudgeImages,
       topK: options.topK,
       queryCount: queries.length,
       strategyCount: strategies.length,
@@ -448,6 +476,9 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
     optimizer,
     querySource,
     labelSource,
+    judgeInput,
+    maxJudgeImages,
+    imageIndexFields: judgeInput === 'text-image' ? imageIndexFields : undefined,
     topK: options.topK,
     queryCount: queries.length,
     strategyCount: strategies.length,
@@ -494,6 +525,8 @@ export async function runSearchTuning(options: RunSearchTuningOptions): Promise<
     optimizer,
     querySource,
     labelSource,
+    judgeInput,
+    maxJudgeImages,
     topK: options.topK,
     queryCount: queries.length,
     strategyCount: strategies.length,
@@ -597,6 +630,8 @@ interface TuningRunSetup {
   strategies: TuningStrategy[];
   querySource: 'user-provided' | 'generated';
   optimizer: TuningStrategyOptimizer;
+  judgeInput?: TuningJudgeInput;
+  maxJudgeImages?: number;
   strategyCoverage: TuningStrategyCoverage;
 }
 
@@ -635,6 +670,8 @@ interface CheckpointStateBase {
   querySource: 'user-provided' | 'generated';
   optimizer: TuningStrategyOptimizer;
   labelSource: EffectiveTuningLabelSource;
+  judgeInput: TuningJudgeInput;
+  maxJudgeImages: number;
   topK: number;
   queryCount: number;
   strategyCount: number;
@@ -677,6 +714,8 @@ async function createNewRunSetup(
     strategies,
     querySource,
     optimizer,
+    judgeInput: options.judgeInput ?? 'text',
+    maxJudgeImages: Math.max(1, Math.floor(options.maxJudgeImages ?? 1)),
     strategyCoverage
   };
 }
@@ -692,6 +731,8 @@ async function loadExistingRunSetup(artifacts: Record<string, string>): Promise<
     strategies,
     querySource: state.querySource,
     optimizer: state.optimizer ?? 'matrix',
+    judgeInput: state.judgeInput ?? 'text',
+    maxJudgeImages: Math.max(1, Math.floor(state.maxJudgeImages ?? 1)),
     strategyCoverage
   };
 }
@@ -727,6 +768,9 @@ function buildPendingLabels(input: {
   queries: TuningQuery[];
   datasetId: string;
   judgeProfileHash: string;
+  judgeInput: TuningJudgeInput;
+  imageIndexFields: string[];
+  maxJudgeImages: number;
   labelsUsed: Map<string, JudgeLabel>;
   cachedLabels: Map<string, JudgeLabel>;
 }): PendingLabelBuildResult {
@@ -737,7 +781,11 @@ function buildPendingLabels(input: {
     const query = queryById.get(ranking.queryId);
     if (!query) continue;
     for (const item of ranking.items) {
-      const itemView = buildItemJudgeView(item);
+      const itemView = buildItemJudgeView(item, {
+        judgeInput: input.judgeInput,
+        imageIndexFields: input.imageIndexFields,
+        maxJudgeImages: input.maxJudgeImages
+      });
       const itemViewHash = sha256Hex(itemView);
       const cacheKey = buildLabelCacheKey({
         datasetId: input.datasetId,
@@ -850,6 +898,8 @@ async function writeSearchCheckpoint(input: {
     optimizer: input.state.optimizer,
     querySource: input.state.querySource,
     labelSource: input.state.labelSource,
+    judgeInput: input.state.judgeInput,
+    maxJudgeImages: input.state.maxJudgeImages,
     topK: input.state.topK,
     queryCount: input.state.queryCount,
     strategyCount: input.state.strategyCount,

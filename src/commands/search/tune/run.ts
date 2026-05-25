@@ -35,6 +35,16 @@ export default class SearchTuneRun extends Command {
       options: ['llm', 'source-item', 'auto'],
       description: 'Relevance label source: llm, source-item, or auto. Default: llm.'
     }),
+    'judge-input': Flags.string({
+      default: 'text',
+      options: ['text', 'text-image'],
+      description: 'LLM judge input mode. Default: text. Use text-image only when visual relevance should affect labels.'
+    }),
+    'max-judge-images': Flags.integer({
+      default: 1,
+      min: 1,
+      description: 'Maximum item images sent to each LLM judge request when --judge-input text-image. Default: 1.'
+    }),
     'llm-retries': Flags.integer({ default: 1, min: 0, description: 'Retries for each failed LLM relevance judgement. Default: 1.' }),
     'max-label-failure-rate': Flags.string({
       default: '0.01',
@@ -66,6 +76,8 @@ export default class SearchTuneRun extends Command {
       searchConcurrency: flags['search-concurrency'],
       llmConcurrency: flags['llm-concurrency'],
       labelSource: flags['label-source'] as 'llm' | 'source-item' | 'auto',
+      judgeInput: flags['judge-input'] as 'text' | 'text-image',
+      maxJudgeImages: flags['max-judge-images'],
       llmRetries: flags['llm-retries'],
       maxLabelFailureRate: Number.parseFloat(flags['max-label-failure-rate']),
       verbose: flags.verbose,
