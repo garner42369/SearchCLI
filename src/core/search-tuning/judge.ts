@@ -154,30 +154,51 @@ function compactValue(value: unknown): unknown {
 function extractImageUrlsFromFields(displayFields: Record<string, unknown>, imageIndexFields: string[], maxImages: number): string[] {
   const urls: string[] = [];
   const seen = new Set<string>();
+  const limit = Math.max(1, Math.floor(maxImages));
   for (const field of imageIndexFields) {
-    collectImageUrls(displayFields[field], urls, seen);
-    if (urls.length >= maxImages) break;
+    for (const value of readFieldPathValues(displayFields, field)) {
+      collectImageUrls(value, urls, seen, limit);
+      if (urls.length >= limit) break;
+    }
+    if (urls.length >= limit) break;
   }
-  return urls.slice(0, maxImages);
+  return urls.slice(0, limit);
 }
 
-function collectImageUrls(value: unknown, urls: string[], seen: Set<string>): void {
-  if (urls.length >= 20) return;
+function readFieldPathValues(displayFields: Record<string, unknown>, fieldPath: string): unknown[] {
+  const normalized = fieldPath.trim();
+  if (!normalized) return [];
+  const values: unknown[] = [];
+  if (Object.prototype.hasOwnProperty.call(displayFields, normalized)) {
+    values.push(displayFields[normalized]);
+  }
+  if (normalized.includes('.')) {
+    values.push(...readPathValues(displayFields, normalized.split('.').filter(Boolean), 0));
+  }
+  return values;
+}
+
+function readPathValues(value: unknown, pathSegments: string[], index: number): unknown[] {
+  if (index >= pathSegments.length) return [value];
+  if (Array.isArray(value)) {
+    return value.flatMap(item => readPathValues(item, pathSegments, index));
+  }
+  if (!isRecord(value)) return [];
+  const segment = pathSegments[index];
+  if (!Object.prototype.hasOwnProperty.call(value, segment)) return [];
+  return readPathValues(value[segment], pathSegments, index + 1);
+}
+
+function collectImageUrls(value: unknown, urls: string[], seen: Set<string>, limit: number): void {
+  if (urls.length >= limit) return;
   if (typeof value === 'string') {
     addImageUrl(value, urls, seen);
     return;
   }
   if (Array.isArray(value)) {
     for (const item of value) {
-      collectImageUrls(item, urls, seen);
-    }
-    return;
-  }
-  if (isRecord(value)) {
-    for (const key of ['url', 'image_url', 'imageUrl', 'uri']) {
-      if (typeof value[key] === 'string') {
-        addImageUrl(value[key], urls, seen);
-      }
+      collectImageUrls(item, urls, seen, limit);
+      if (urls.length >= limit) break;
     }
   }
 }
