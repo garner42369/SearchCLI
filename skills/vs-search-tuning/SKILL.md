@@ -14,7 +14,7 @@ commands: llm login, llm import-env, llm status, search tune llm-check, search t
 
 Use this skill when the user wants an external agent to evaluate and tune text search similarity for an existing AI Search application and dataset.
 
-This first version is for text-query similarity only. It fixes `mode=UserDefined` and tunes the user-defined recall strategy, recall weights, keyword match ratio, and max retrieved count. It does not tune rerank, personalization, hotness, boost/bury, sort rules, serving controls, or business operating rules.
+This first version is for similarity tuning. It defaults to text-query/text-item judging, fixes `mode=UserDefined`, and tunes the user-defined recall strategy, recall weights, keyword match ratio, and max retrieved count. It can optionally use text+image LLM judging when visual relevance matters; image fields are taken only from `GetAppDataConfig.ImageIndexFields`. It does not tune rerank, personalization, hotness, boost/bury, sort rules, serving controls, or business operating rules.
 
 ## Preconditions
 
@@ -32,7 +32,7 @@ This first version is for text-query similarity only. It fixes `mode=UserDefined
 - `search tune validate`: validate a query set locally before planning or running; reports schema issues, duplicate ids/text, sourceItemIds coverage, query type skew, and a label-source recommendation
 - `search tune query-generate`: generate a reusable synthetic query set from paged dataset samples with batched concurrent LLM calls when the user has no query set
 - `search tune plan`: show query source, candidate strategies, estimated requests/labels, parameter coverage, source-item coverage, warnings, and suggested first-pass size before running
-- `search tune run`: generate or load queries, run candidate search strategies, label top results, compute metrics, and write artifacts; supports `--label-source llm|source-item|auto`, `--llm-retries`, `--max-label-failure-rate`, and `--verbose`; use `--resume-run-id <run-id>` to continue an interrupted run
+- `search tune run`: generate or load queries, run candidate search strategies, label top results, compute metrics, and write artifacts; supports `--label-source llm|source-item|auto`, `--judge-input text|text-image`, `--max-judge-images`, `--llm-retries`, `--max-label-failure-rate`, and `--verbose`; use `--resume-run-id <run-id>` to continue an interrupted run
 - `search tune report`: read a previous tuning report
 - `search tune compare`: compare completed tuning runs with `--run-ids`, or compare existing scenes online with `--scene-ids --queries` using source-item silver labels
 - `search tune apply`: create a new candidate search scene from a completed tuning report recommendation
@@ -52,10 +52,11 @@ This first version is for text-query similarity only. It fixes `mode=UserDefined
 3. Check that the application is ready:
    - `vs app status --application-id <id> --json`
 4. Confirm the tuning boundary with the user:
-   - text query only
+   - text query similarity tuning
    - similarity-only profile
    - fixed `mode=UserDefined`
    - tunes only `user_defined_recall_mode`, `dense_weight`, `text_weight`, `query_keyword_match_percent`, and `max_retrieved_num`
+   - LLM judging defaults to `--judge-input text`; use `--judge-input text-image` only when the user asks for image-aware relevance or the domain is strongly visual and image quality/content should affect relevance
    - no rerank, personalization, hotness, boost/bury, sort rules, serving controls, or business operating rules
 5. If the user has no query set, generate one first:
    - `vs search tune query-generate --application-id <id> --dataset-id <dataset> --query-count 100 --sample-size 200 --query-batch-size 10 --llm-concurrency 100 --timeout-ms 120000 --json`
@@ -70,6 +71,7 @@ This first version is for text-query similarity only. It fixes `mode=UserDefined
 8. Run tuning only after the plan is acceptable:
    - fast first pass when the query file has enough `sourceItemIds`: `vs search tune run --application-id <id> --dataset-id <dataset> --queries <file> --profile similarity-only --label-source source-item --search-concurrency 18 --timeout-ms 120000 --json`
    - LLM judgement run: `vs search tune run --application-id <id> --dataset-id <dataset> --queries <file> --profile similarity-only --label-source llm --search-concurrency 18 --llm-concurrency 100 --llm-retries 1 --max-label-failure-rate 0.01 --timeout-ms 120000`
+   - image-aware LLM judgement run, only when visual relevance is needed: `vs search tune run --application-id <id> --dataset-id <dataset> --queries <file> --profile similarity-only --label-source llm --judge-input text-image --max-judge-images 1 --search-concurrency 18 --llm-concurrency 100 --timeout-ms 120000`
    - with generated queries: use the `queryFile` returned by `query-generate`
    Use the command form above for first-pass tuning unless the user explicitly asks for a different evaluation scope. Search requests default to 18-way concurrency, and LLM judgements default to 100-way concurrency. LLM judging runs as a worker pool, so completed labels are checkpointed while slower LLM requests continue in their own worker slots.
 9. While a run is active, use the artifact paths from progress output if troubleshooting is needed:
@@ -111,6 +113,7 @@ This first version is for text-query similarity only. It fixes `mode=UserDefined
 - Do not present the recommendation as an online change. `search tune apply` creates a new candidate scene only; it does not switch the default entrance.
 - If a tuning process is interrupted, prefer `--resume-run-id` over starting a duplicate run with the same query set and strategy space.
 - Do not tune or attribute changes to rerank, personalization, hotness, boost/bury, sort rules, serving controls, or business rules in this first-version workflow.
+- Do not enable `--judge-input text-image` by default. Use it only when image relevance is part of the user's evaluation goal; if `GetAppDataConfig.ImageIndexFields` is empty, stay with text judging and tell the user image-aware judging is unavailable for that app+dataset config.
 - Do not create, update, publish, or switch search scenes as a fallback for failed automatic tuning. Only use `search tune apply` after a completed report and explicit user approval.
 - Do not call a result "optimal" or "best" unless a completed `search tune run` report exists. If the report used `--label-source source-item`, call it a fast source-item silver-label recommendation and explain that LLM or human labels can be used for higher-confidence validation.
 - Do not delete or prune `.viking/search-tuning` artifacts unless the user explicitly asks.

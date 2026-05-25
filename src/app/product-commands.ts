@@ -1464,7 +1464,7 @@ COMMON FLAGS
         'vs search tune validate --queries <file> [--query-count <n>] [service flags]',
         'vs search tune plan --application-id <id> [--dataset-id <id>] [--queries <file>] [--profile similarity-only] [service flags]',
         'vs search tune query-generate --application-id <id> [--dataset-id <id>] [--query-count <n>] [--sample-size <n>] [--query-batch-size <n>] [--llm-concurrency <n>] [service flags]',
-        'vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--label-source <llm|source-item|auto>] [--profile similarity-only] [--search-concurrency <n>] [--llm-concurrency <n>] [--timeout-ms <ms>] [service flags]',
+        'vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--label-source <llm|source-item|auto>] [--judge-input <text|text-image>] [--profile similarity-only] [--search-concurrency <n>] [--llm-concurrency <n>] [--timeout-ms <ms>] [service flags]',
         'vs search tune apply --application-id <id> --run-id <id> [--dry-run | --confirm-create-scene] [service flags]',
         'vs search tune report --run-id <id> [--output-dir <dir>] [service flags]',
         'vs search tune compare (--run-ids <a,b> | --application-id <id> --dataset-id <id> --scene-ids <a,b> --queries <file>) [service flags]'
@@ -2041,7 +2041,7 @@ EXAMPLES
     'tune:run': `Run first-version automated search evaluation and similarity tuning.
 
 USAGE
-  vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--optimizer <matrix|spa>] [--label-source <llm|source-item|auto>] [--profile similarity-only] [--search-concurrency <n>] [--llm-concurrency <n>] [--timeout-ms <ms>] [service flags]
+  vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--optimizer <matrix|spa>] [--label-source <llm|source-item|auto>] [--judge-input <text|text-image>] [--profile similarity-only] [--search-concurrency <n>] [--llm-concurrency <n>] [--timeout-ms <ms>] [service flags]
 
 DESCRIPTION
   Runs text-query similarity tuning with CLI-managed LLM query generation and pointwise relevance judging.
@@ -2059,6 +2059,8 @@ KEY FLAGS
   --max-strategies  Maximum candidate strategies. Default: 30.
   --optimizer       Candidate strategy optimizer: matrix or spa. Default: matrix.
   --label-source    Relevance label source: llm, source-item, or auto. Default: llm.
+  --judge-input     LLM judge input mode: text or text-image. Default: text.
+  --max-judge-images  Max item images per LLM judge request for text-image. Default: 1.
   --search-concurrency  Concurrent search requests. Default: 18.
   --llm-concurrency     Concurrent LLM relevance judgements. Default: 100.
   --llm-retries         Retries per failed LLM judgement. Default: 1.
@@ -2071,6 +2073,7 @@ KEY FLAGS
 EXAMPLES
   vs search tune run --application-id 123 --dataset-id 456 --profile similarity-only
   vs search tune run --application-id 123 --dataset-id 456 --queries ./queries.jsonl --top-k 20 --max-strategies 30 --optimizer spa --search-concurrency 18 --llm-concurrency 100
+  vs search tune run --application-id 123 --dataset-id 456 --queries ./queries.jsonl --label-source llm --judge-input text-image --max-judge-images 1
   vs search tune run --application-id 123 --dataset-id 456 --queries ./queries.jsonl --label-source source-item`,
     'tune:apply': `Create a new search scene from a completed tuning report recommendation.
 
@@ -2645,6 +2648,8 @@ async function runSearchCli(argv: string[]): Promise<void> {
             searchConcurrency: parseOptionalInt(optionalString(values['search-concurrency'])),
             llmConcurrency: parseOptionalInt(optionalString(values['llm-concurrency'])),
             labelSource: parseTuningLabelSource(optionalString(values['label-source'])),
+            judgeInput: parseTuningJudgeInput(optionalString(values['judge-input'])),
+            maxJudgeImages: parseOptionalInt(optionalString(values['max-judge-images'])),
             llmRetries: parseOptionalInt(optionalString(values['llm-retries'])),
             maxLabelFailureRate: parseOptionalNumber(optionalString(values['max-label-failure-rate'])),
             verbose: optionalBoolean(values.verbose),
@@ -2867,6 +2872,8 @@ function parseStandaloneOptions(argv: string[]) {
       'search-concurrency': { type: 'string' },
       'llm-concurrency': { type: 'string' },
       'label-source': { type: 'string' },
+      'judge-input': { type: 'string' },
+      'max-judge-images': { type: 'string' },
       'llm-retries': { type: 'string' },
       'max-label-failure-rate': { type: 'string' },
       verbose: { type: 'boolean' },
@@ -3766,6 +3773,14 @@ function parseTuningLabelSource(value?: string): 'llm' | 'source-item' | 'auto' 
     return value;
   }
   throw new Error(`Invalid --label-source value: ${value}`);
+}
+
+function parseTuningJudgeInput(value?: string): 'text' | 'text-image' | undefined {
+  if (!value) return undefined;
+  if (value === 'text' || value === 'text-image') {
+    return value;
+  }
+  throw new Error(`Invalid --judge-input value: ${value}`);
 }
 
 function parseTuningOptimizer(value?: string): 'matrix' | 'spa' | undefined {

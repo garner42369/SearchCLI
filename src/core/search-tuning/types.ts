@@ -6,6 +6,7 @@ import type { SearchDynamic, SearchResultItem } from '../types';
 export type TuningLabelSource = 'llm' | 'source-item' | 'auto';
 export type EffectiveTuningLabelSource = 'llm' | 'source-item';
 export type TuningStrategyOptimizer = 'matrix' | 'spa';
+export type TuningJudgeInput = 'text' | 'text-image';
 
 export interface TuningQuery {
   id: string;
@@ -80,6 +81,7 @@ export interface ItemJudgeView {
   item_id: string;
   title?: string;
   display_fields: Record<string, unknown>;
+  image_urls?: string[];
 }
 
 export interface JudgeLabel {
@@ -161,6 +163,9 @@ export interface TuningRunReportShape {
   optimizer: TuningStrategyOptimizer;
   querySource: 'user-provided' | 'generated';
   labelSource: EffectiveTuningLabelSource;
+  judgeInput?: TuningJudgeInput;
+  maxJudgeImages?: number;
+  imageIndexFields?: string[];
   topK: number;
   queryCount: number;
   strategyCount: number;
@@ -186,6 +191,8 @@ export interface TuningRunStateShape {
   optimizer?: TuningStrategyOptimizer;
   querySource: 'user-provided' | 'generated';
   labelSource: EffectiveTuningLabelSource;
+  judgeInput?: TuningJudgeInput;
+  maxJudgeImages?: number;
   topK: number;
   queryCount: number;
   strategyCount: number;

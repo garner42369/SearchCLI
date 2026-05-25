@@ -16,7 +16,7 @@ import { loadTuningReport, loadTuningRunState, runSearchTuning, type TuningProgr
 import { generateTuningQueries, generateTuningQuerySet } from '../core/search-tuning/query-generator';
 import { stableStringify } from '../core/search-tuning/hash';
 import { validateTuningQueryFile } from '../core/search-tuning/validate';
-import type { TuningLabelSource, TuningStrategyOptimizer } from '../core/search-tuning/types';
+import type { TuningJudgeInput, TuningLabelSource, TuningStrategyOptimizer } from '../core/search-tuning/types';
 
 export interface SearchTuneServiceOptions extends ServiceConfigInput {
   data?: string;
@@ -34,6 +34,8 @@ export interface SearchTuneRunOptions extends SearchTuneServiceOptions {
   searchConcurrency?: number;
   llmConcurrency?: number;
   labelSource?: TuningLabelSource;
+  judgeInput?: TuningJudgeInput;
+  maxJudgeImages?: number;
   llmRetries?: number;
   maxLabelFailureRate?: number;
   verbose?: boolean;
@@ -141,8 +143,11 @@ export async function runSearchTuneRunCommand(options: SearchTuneRunOptions): Pr
   }
 
   const effectiveTimeoutMs = options.timeoutMs ?? 120000;
-  const effectiveLabelSource = options.labelSource ?? 'llm';
-  const needsLlmBeforeRun = !options.queries || effectiveLabelSource === 'llm';
+  const resumeState = options.resumeRunId ? await loadTuningRunState(options.outputDir, options.resumeRunId) : undefined;
+  const effectiveLabelSource = options.labelSource ?? resumeState?.labelSource ?? 'llm';
+  const effectiveJudgeInput = options.judgeInput ?? resumeState?.judgeInput ?? 'text';
+  const effectiveMaxJudgeImages = Math.max(1, Math.floor(options.maxJudgeImages ?? resumeState?.maxJudgeImages ?? 1));
+  const needsLlmBeforeRun = (!resumeState && !options.queries) || effectiveLabelSource === 'llm';
   const llmConfig = needsLlmBeforeRun
     ? (resolveLlmClientConfig({
         timeoutMs: effectiveTimeoutMs
@@ -160,7 +165,6 @@ export async function runSearchTuneRunCommand(options: SearchTuneRunOptions): Pr
     ...toServiceConfigInput(options),
     timeoutMs: effectiveTimeoutMs
   });
-  const resumeState = options.resumeRunId ? await loadTuningRunState(options.outputDir, options.resumeRunId) : undefined;
   if (resumeState && resumeState.applicationId !== options.applicationId) {
     throw new Error(
       `Cannot resume ${options.resumeRunId} for application ${options.applicationId}; run-state.json belongs to application ${resumeState.applicationId}.`
@@ -173,7 +177,8 @@ export async function runSearchTuneRunCommand(options: SearchTuneRunOptions): Pr
         applicationId: options.applicationId,
         datasetId: options.datasetId,
         sceneId: options.sceneId,
-        sampleSize: 20
+        sampleSize: 20,
+        includeImageIndexFields: effectiveJudgeInput === 'text-image'
       });
   const effectiveTopK = resumeState?.topK ?? options.topK ?? 20;
   const effectiveQueryCount = resumeState?.queryCount ?? options.queryCount ?? 100;
@@ -201,6 +206,8 @@ export async function runSearchTuneRunCommand(options: SearchTuneRunOptions): Pr
     searchConcurrency: effectiveSearchConcurrency,
     llmConcurrency: effectiveLlmConcurrency,
     labelSource: effectiveLabelSource,
+    judgeInput: effectiveJudgeInput,
+    maxJudgeImages: effectiveMaxJudgeImages,
     llmRetries: options.llmRetries ?? 1,
     maxLabelFailureRate,
     outputDir: options.outputDir,
@@ -225,6 +232,9 @@ export async function runSearchTuneRunCommand(options: SearchTuneRunOptions): Pr
     labelsUsed: report.artifacts.labelsUsed,
     labelFailures: report.artifacts.labelFailures,
     labelSource: report.labelSource,
+    judgeInput: report.judgeInput,
+    maxJudgeImages: report.maxJudgeImages,
+    imageIndexFields: report.imageIndexFields,
     labelCount: report.labelCount,
     labelFailureCount: report.labelFailureCount,
     recommendedStrategyId: report.recommendedStrategyId

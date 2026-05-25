@@ -57,15 +57,29 @@ export function resolveLlmClientConfig(input: Partial<LlmClientConfig> = {}): Ll
 export async function requestChatCompletion(
   config: LlmClientConfig,
   systemPrompt: string,
-  inputPayload: Record<string, unknown>
+  inputPayload: Record<string, unknown>,
+  options: { imageUrls?: string[] } = {}
 ): Promise<string> {
   const url = buildLlmChatCompletionUrl(config.baseUrl);
+  const userText = JSON.stringify(inputPayload, null, 2);
+  const userContent =
+    options.imageUrls && options.imageUrls.length > 0
+      ? [
+          { type: 'text', text: userText },
+          ...options.imageUrls.map(imageUrl => ({
+            type: 'image_url',
+            image_url: {
+              url: imageUrl
+            }
+          }))
+        ]
+      : userText;
   const body = JSON.stringify({
     model: config.model,
     temperature: 0,
     messages: [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: JSON.stringify(inputPayload, null, 2) }
+      { role: 'user', content: userContent }
     ]
   });
 

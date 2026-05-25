@@ -3,6 +3,7 @@
 
 import type { ServiceConfig } from '../service-config';
 import { VikingRuntimeApiClient } from '../runtime-api-client';
+import { VikingOpenApiClient } from '../openapi-client';
 import { fetchAppStatusSnapshot } from '../app-status';
 
 export interface TuningContext {
@@ -10,6 +11,7 @@ export interface TuningContext {
   datasetId: string;
   sceneId?: string;
   sampleItems: Array<Record<string, unknown>>;
+  imageIndexFields?: string[];
 }
 
 export async function inspectTuningContext(options: {
@@ -18,6 +20,7 @@ export async function inspectTuningContext(options: {
   datasetId?: string;
   sceneId?: string;
   sampleSize?: number;
+  includeImageIndexFields?: boolean;
 }): Promise<TuningContext> {
   let datasetId = options.datasetId;
   if (!datasetId) {
@@ -34,8 +37,29 @@ export async function inspectTuningContext(options: {
     applicationId: options.applicationId,
     datasetId,
     sceneId: options.sceneId,
-    sampleItems: await loadDatasetSamples(options.config, datasetId, options.sampleSize ?? 20)
+    sampleItems: await loadDatasetSamples(options.config, datasetId, options.sampleSize ?? 20),
+    ...(options.includeImageIndexFields
+      ? { imageIndexFields: await loadImageIndexFields(options.config, options.applicationId, datasetId) }
+      : {})
   };
+}
+
+async function loadImageIndexFields(config: ServiceConfig, applicationId: string, datasetId: string): Promise<string[]> {
+  const client = new VikingOpenApiClient(config);
+  const response = await client.post('/api/v1/GetAppDataConfig', {
+    AppID: applicationId,
+    DatasetID: datasetId,
+    ProjectName: config.projectName
+  });
+  return readImageIndexFields(response);
+}
+
+function readImageIndexFields(response: unknown): string[] {
+  const result = isRecord(response) ? response.Result : undefined;
+  const config = isRecord(result) ? result.Config : undefined;
+  const dataConfig = isRecord(config) ? config.DataConfig : undefined;
+  const raw = isRecord(dataConfig) ? dataConfig.ImageIndexFields : undefined;
+  return Array.isArray(raw) ? raw.map(item => String(item).trim()).filter(Boolean) : [];
 }
 
 async function loadDatasetSamples(

@@ -4,10 +4,10 @@
 import { parseJsonResponse, requestChatCompletion, type LlmClientConfig } from '../llm-client';
 import type { SearchResultItem } from '../types';
 import { sha256Hex } from './hash';
-import type { ItemJudgeView, JudgeLabel, TuningQuery } from './types';
+import type { ItemJudgeView, JudgeLabel, TuningJudgeInput, TuningQuery } from './types';
 
-const JUDGE_PROMPT = `You are judging text search relevance.
-Only evaluate semantic and lexical relevance between the query and the item. Ignore popularity, personalization, business rules, inventory, and operational promotion rules.
+const TEXT_JUDGE_PROMPT = `You are judging text search relevance.
+Only evaluate semantic and lexical relevance between the query and the item text. Ignore popularity, personalization, business rules, inventory, and operational promotion rules.
 
 Use this grade rubric:
 3 = highly relevant; the item fully satisfies the main query intent.
@@ -17,9 +17,30 @@ Use this grade rubric:
 
 Return only JSON with: grade, confidence, reason. confidence must be between 0 and 1.`;
 
-export function buildJudgeProfileHash(llmConfig: LlmClientConfig): string {
+const TEXT_IMAGE_JUDGE_PROMPT = `You are judging text search relevance with optional item images.
+Evaluate semantic, lexical, and visual relevance between the text query and the item. Use the item text and any provided images. Ignore popularity, personalization, business rules, inventory, and operational promotion rules.
+
+Use this grade rubric:
+3 = highly relevant; the item fully satisfies the main query intent.
+2 = relevant; the item satisfies the main intent but has missing or weak details.
+1 = weakly relevant; the item only matches a broad category or a few terms.
+0 = not relevant.
+
+Return only JSON with: grade, confidence, reason. confidence must be between 0 and 1.`;
+
+export interface JudgeInputOptions {
+  judgeInput: TuningJudgeInput;
+  imageIndexFields?: string[];
+  maxJudgeImages?: number;
+}
+
+export function buildJudgeProfileHash(llmConfig: LlmClientConfig, options: JudgeInputOptions): string {
+  const prompt = options.judgeInput === 'text-image' ? TEXT_IMAGE_JUDGE_PROMPT : TEXT_JUDGE_PROMPT;
   return sha256Hex({
-    prompt: JUDGE_PROMPT,
+    prompt,
+    judge_input: options.judgeInput,
+    image_index_fields: options.judgeInput === 'text-image' ? [...(options.imageIndexFields ?? [])].sort() : [],
+    max_judge_images: options.judgeInput === 'text-image' ? options.maxJudgeImages ?? 1 : 0,
     output_schema: {
       grade: 'integer 0..3',
       confidence: 'number 0..1',
@@ -29,12 +50,17 @@ export function buildJudgeProfileHash(llmConfig: LlmClientConfig): string {
   });
 }
 
-export function buildItemJudgeView(item: SearchResultItem): ItemJudgeView {
-  return {
+export function buildItemJudgeView(item: SearchResultItem, options: JudgeInputOptions = { judgeInput: 'text' }): ItemJudgeView {
+  const view: ItemJudgeView = {
     item_id: item.id,
     title: item.title,
     display_fields: compactDisplayFields(item.displayFields)
   };
+  if (options.judgeInput === 'text-image') {
+    const imageUrls = extractImageUrlsFromFields(item.displayFields, options.imageIndexFields ?? [], options.maxJudgeImages ?? 1);
+    view.image_urls = imageUrls;
+  }
+  return view;
 }
 
 export async function judgeRelevance(options: {
@@ -47,14 +73,22 @@ export async function judgeRelevance(options: {
   judgeProfileHash: string;
   cacheKey: string;
 }): Promise<JudgeLabel> {
-  const raw = await requestChatCompletion(options.llmConfig, JUDGE_PROMPT, {
-    query: {
-      id: options.query.id,
-      text: options.query.text,
-      intent: options.query.intent
+  const judgePrompt = Array.isArray(options.itemView.image_urls) ? TEXT_IMAGE_JUDGE_PROMPT : TEXT_JUDGE_PROMPT;
+  const raw = await requestChatCompletion(
+    options.llmConfig,
+    judgePrompt,
+    {
+      query: {
+        id: options.query.id,
+        text: options.query.text,
+        intent: options.query.intent
+      },
+      item: options.itemView
     },
-    item: options.itemView
-  });
+    {
+      imageUrls: options.itemView.image_urls
+    }
+  );
   const parsed = parseJsonResponse(raw);
   const record = isRecord(parsed) ? parsed : {};
 
@@ -115,6 +149,48 @@ function compactValue(value: unknown): unknown {
     return Object.fromEntries(entries.map(([key, entry]) => [key, compactValue(entry)]));
   }
   return value;
+}
+
+function extractImageUrlsFromFields(displayFields: Record<string, unknown>, imageIndexFields: string[], maxImages: number): string[] {
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  for (const field of imageIndexFields) {
+    collectImageUrls(displayFields[field], urls, seen);
+    if (urls.length >= maxImages) break;
+  }
+  return urls.slice(0, maxImages);
+}
+
+function collectImageUrls(value: unknown, urls: string[], seen: Set<string>): void {
+  if (urls.length >= 20) return;
+  if (typeof value === 'string') {
+    addImageUrl(value, urls, seen);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectImageUrls(item, urls, seen);
+    }
+    return;
+  }
+  if (isRecord(value)) {
+    for (const key of ['url', 'image_url', 'imageUrl', 'uri']) {
+      if (typeof value[key] === 'string') {
+        addImageUrl(value[key], urls, seen);
+      }
+    }
+  }
+}
+
+function addImageUrl(value: string, urls: string[], seen: Set<string>): void {
+  const url = value.trim();
+  if (!isSupportedImageUrl(url) || seen.has(url)) return;
+  seen.add(url);
+  urls.push(url);
+}
+
+function isSupportedImageUrl(value: string): boolean {
+  return /^https?:\/\//iu.test(value) || /^data:image\//iu.test(value);
 }
 
 function clampInteger(value: unknown, min: number, max: number): number {
