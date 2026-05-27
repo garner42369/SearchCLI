@@ -12,7 +12,7 @@ export interface BuildSearchTuningPlanOptions {
   datasetId?: string;
   sceneId?: string;
   queriesFile?: string;
-  queryCount: number;
+  queryCount?: number;
   topK: number;
   maxStrategies: number;
   optimizer?: TuningStrategyOptimizer;
@@ -23,8 +23,8 @@ export async function buildSearchTuningPlan(options: BuildSearchTuningPlanOption
   const strategies = generateTuningStrategies({ optimizer, maxStrategies: options.maxStrategies });
   const queryStats = options.queriesFile
     ? await loadQueryStats(options.queriesFile, options.queryCount)
-    : { queryCount: options.queryCount, sourceItemQueryCount: 0 };
-  const queryCount = Math.min(options.queryCount, queryStats.queryCount);
+    : { queryCount: options.queryCount ?? 100, sourceItemQueryCount: 0 };
+  const queryCount = queryStats.queryCount;
   const strategyCount = strategies.length;
   const suggestedFirstPass = buildSuggestedFirstPass(queryCount, strategyCount, options.topK);
   const maxPointwiseJudgements = queryCount * strategyCount * options.topK;
@@ -61,7 +61,7 @@ export async function buildSearchTuningPlan(options: BuildSearchTuningPlanOption
   };
 }
 
-async function loadQueryStats(filePath: string, limit: number): Promise<{ queryCount: number; sourceItemQueryCount: number }> {
+async function loadQueryStats(filePath: string, limit?: number): Promise<{ queryCount: number; sourceItemQueryCount: number }> {
   let queries: TuningQuery[];
   if (/\.csv$/i.test(filePath)) {
     const cases = await loadSearchCases(filePath);
@@ -71,7 +71,7 @@ async function loadQueryStats(filePath: string, limit: number): Promise<{ queryC
   } else {
     queries = await loadTuningQueries(filePath);
   }
-  const evaluated = queries.slice(0, limit);
+  const evaluated = typeof limit === 'number' ? queries.slice(0, Math.max(0, Math.floor(limit))) : queries;
   return {
     queryCount: evaluated.length,
     sourceItemQueryCount: evaluated.filter(query => (query.sourceItemIds ?? []).length > 0).length
