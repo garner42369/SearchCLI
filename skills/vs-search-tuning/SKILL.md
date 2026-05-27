@@ -64,6 +64,7 @@ This first version is for similarity tuning. It defaults to text-query/text-item
 6. Validate the accepted query set before planning:
    - `vs search tune validate --queries <file> --json`
    Summarize `ok`, `validQueryCount`, `duplicateIdCount`, `sourceItemQueryCoverage`, `labelSourceRecommendation`, and any blocking `problems`. If `ok=false`, fix or regenerate the query set before continuing.
+   When a user provides `--queries <file>`, `search tune plan` and `search tune run` evaluate the whole file by default; pass `--query-count <n>` only when the user explicitly wants a smaller prefix.
 7. Run a plan before any expensive evaluation:
    - with user queries: `vs search tune plan --application-id <id> --dataset-id <dataset> --queries <file> --profile similarity-only --json`
    - with generated queries: use the `queryFile` returned by `query-generate`

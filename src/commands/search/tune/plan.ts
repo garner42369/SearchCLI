@@ -19,7 +19,10 @@ export default class SearchTunePlan extends Command {
     'dataset-id': Flags.string({ description: 'Dataset ID. If omitted, the plan only records application scope.' }),
     profile: Flags.string({ default: 'similarity-only', options: ['similarity-only'] }),
     queries: Flags.string({ description: 'JSON/JSONL/CSV query set. If omitted, the plan assumes CLI-generated queries.' }),
-    'query-count': Flags.integer({ default: 100, description: 'Maximum number of queries to evaluate.' }),
+    'query-count': Flags.integer({
+      min: 1,
+      description: 'Maximum number of queries to evaluate. Defaults to all queries from --queries, or 100 generated queries when --queries is omitted.'
+    }),
     'top-k': Flags.integer({ default: 20, description: 'Number of search results judged per query and strategy.' }),
     'max-strategies': Flags.integer({ default: 30, description: 'Maximum number of candidate strategies to evaluate.' }),
     optimizer: Flags.string({ default: 'matrix', options: ['matrix', 'spa'], description: 'Candidate strategy optimizer. Default: matrix.' })

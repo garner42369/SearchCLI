@@ -181,7 +181,7 @@ export async function runSearchTuneRunCommand(options: SearchTuneRunOptions): Pr
         includeImageIndexFields: effectiveJudgeInput === 'text-image'
       });
   const effectiveTopK = resumeState?.topK ?? options.topK ?? 20;
-  const effectiveQueryCount = resumeState?.queryCount ?? options.queryCount ?? 100;
+  const effectiveQueryCount = resumeState?.queryCount ?? options.queryCount ?? (options.queries ? undefined : 100);
   const effectiveMaxStrategies = resumeState?.strategyCount ?? options.maxStrategies ?? 30;
   const effectiveOptimizer = resumeState?.optimizer ?? options.optimizer ?? 'matrix';
   const effectiveSearchConcurrency = resumeState?.searchConcurrency ?? options.searchConcurrency ?? 18;
@@ -257,7 +257,7 @@ export async function runSearchTunePlanCommand(options: SearchTunePlanOptions): 
     datasetId: options.datasetId,
     sceneId: options.sceneId,
     queriesFile: options.queries,
-    queryCount: options.queryCount ?? 100,
+    queryCount: options.queryCount,
     topK: options.topK ?? 20,
     maxStrategies: options.maxStrategies ?? 30,
     optimizer: options.optimizer ?? 'matrix'

@@ -45,7 +45,7 @@ export interface RunSearchTuningOptions {
   context: TuningContext;
   llmConfig?: LlmClientConfig;
   queriesFile?: string;
-  queryCount: number;
+  queryCount?: number;
   topK: number;
   maxStrategies: number;
   optimizer?: TuningStrategyOptimizer;
@@ -592,19 +592,22 @@ function buildSourceItemJudgeProfileHash(): string {
 
 async function resolveQueries(options: RunSearchTuningOptions): Promise<TuningQuery[]> {
   if (options.queriesFile) {
+    const applyQueryLimit = (queries: TuningQuery[]): TuningQuery[] =>
+      typeof options.queryCount === 'number' ? queries.slice(0, Math.max(0, Math.floor(options.queryCount))) : queries;
     if (/\.csv$/i.test(options.queriesFile)) {
       const cases = await loadSearchCases(options.queriesFile);
-      return cases
-        .map((searchCase, index) => searchCaseToTuningQuery(searchCase, index))
-        .filter((query): query is TuningQuery => Boolean(query))
-        .slice(0, options.queryCount);
+      return applyQueryLimit(
+        cases
+          .map((searchCase, index) => searchCaseToTuningQuery(searchCase, index))
+          .filter((query): query is TuningQuery => Boolean(query))
+      );
     }
-    return (await loadTuningQueries(options.queriesFile)).slice(0, options.queryCount);
+    return applyQueryLimit(await loadTuningQueries(options.queriesFile));
   }
   return generateTuningQueries({
     llmConfig: requireLlmConfig(options.llmConfig, 'LLM is required to generate tuning queries. Pass --queries or configure LLM.'),
     sampleItems: options.context.sampleItems,
-    count: options.queryCount
+    count: options.queryCount ?? 100
   });
 }
 
