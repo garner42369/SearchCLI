@@ -10,6 +10,8 @@
     "dist",
     "skills",
     "README.md",
+    "README.zh_CN.md",
+    "README.ja_JP.md",
     "package.json"
   ],
   "engines": {

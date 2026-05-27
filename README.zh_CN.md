@@ -4,7 +4,7 @@
 
 # SearchCLI
 
-[English README](README.md) | 中文
+[English](README.md) | 简体中文 | [日本語](README.ja_JP.md)
 
 将稳定、可调优的搜索、推荐与对话检索能力接入你的 Agent 系统或业务系统。
 
@@ -75,6 +75,16 @@ vs doctor --json
 ```bash
 vs auth login
 ```
+
+如果你需要使用搜索调优的查询生成，或使用 LLM 做相关性评测，请配置 OpenAI-compatible LLM API，并避免把 API key 明文写入配置文件：
+
+```bash
+vs llm login
+vs llm status --json
+vs search tune llm-check --live --json
+```
+
+如果当前 shell 已经设置了 `VIKING_LLM_BASE_URL`、`VIKING_LLM_API_KEY` 和 `VIKING_LLM_MODEL`，可以改用 `vs llm import-env`。API key 会保存在本地安全凭据存储中；base URL 和 model 会作为非敏感配置保存。
 
 ### 3. 跑通第一条 Onboarding 流程
 
@@ -168,6 +178,7 @@ vs auth login
 ```bash
 vs --help
 vs auth status --json
+vs llm status --json
 vs doctor --json
 vs skill list
 ```
@@ -175,6 +186,7 @@ vs skill list
 ## 公开命令组
 
 - `vs auth`
+- `vs llm`
 - `vs doctor`
 - `vs skill`
 - `vs item`
