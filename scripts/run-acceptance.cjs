@@ -33,6 +33,7 @@ async function main() {
   await runTest('search-tune-help', testSearchTuneHelp);
   await runTest('search-run-requires-scene-help', testSearchRunRequiresSceneHelp);
   await runTest('search-tune-plan', testSearchTunePlan);
+  await runTest('search-tune-plan-user-queries-default-all', testSearchTunePlanUserQueriesDefaultAll);
   await runTest('search-tune-plan-spa', testSearchTunePlanSpa);
   await runTest('search-tune-query-generate-mock', testSearchTuneQueryGenerateMock);
   await runTest('search-tune-run-worker-pool-mock', testSearchTuneRunWorkerPoolMock);
@@ -235,6 +236,45 @@ async function testSearchTunePlan() {
   assert.ok(payload.coverage.user_defined_recall_mode.values.includes('KeywordOnly'));
   assert.ok(payload.coverage.user_defined_recall_mode.values.includes('SemanticOnly'));
   assert.ok(payload.coverage.user_defined_recall_mode.values.includes('KeywordSemantic'));
+  return `${command.prefix} search tune plan --application-id app-1 --dataset-id ds-1 --queries ${queriesPath} --json`;
+}
+
+async function testSearchTunePlanUserQueriesDefaultAll() {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'viking-acceptance-tune-plan-all-'));
+  const queriesPath = path.join(workspace, 'queries.jsonl');
+  fs.writeFileSync(
+    queriesPath,
+    Array.from({ length: 120 }, (_, index) =>
+      JSON.stringify({
+        id: `q${index + 1}`,
+        text: `query ${index + 1}`,
+        sourceItemIds: [`item-${index + 1}`]
+      })
+    ).join('\n')
+  );
+
+  const { stdout } = await runCli([
+    'search',
+    'tune',
+    'plan',
+    '--application-id',
+    'app-1',
+    '--dataset-id',
+    'ds-1',
+    '--queries',
+    queriesPath,
+    '--top-k',
+    '5',
+    '--max-strategies',
+    '8',
+    '--json'
+  ]);
+  const payload = JSON.parse(stdout);
+  assert.equal(payload.querySource, 'user-provided');
+  assert.equal(payload.estimated.queryCount, 120);
+  assert.equal(payload.estimated.searchRequests, 960);
+  assert.equal(payload.estimated.sourceItemQueryCount, 120);
+  assert.equal(payload.suggestedFirstPass.queryCount, 30);
   return `${command.prefix} search tune plan --application-id app-1 --dataset-id ds-1 --queries ${queriesPath} --json`;
 }
 

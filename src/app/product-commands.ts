@@ -2007,7 +2007,7 @@ KEY FLAGS
   --application-id  Target application ID.
   --dataset-id      Dataset ID.
   --queries         JSON, JSONL, or CSV query set. If omitted, the plan assumes CLI-generated queries.
-  --query-count     Maximum query count. Default: 100.
+  --query-count     Maximum query count. Defaults to all queries from --queries, or 100 generated queries when --queries is omitted.
   --top-k           Results judged per query and strategy. Default: 20.
   --max-strategies  Maximum candidate strategies. Default: 30.
   --optimizer       Candidate strategy optimizer: matrix or spa. Default: matrix.
@@ -2054,7 +2054,7 @@ KEY FLAGS
   --application-id  Target application ID.
   --dataset-id      Dataset ID. If omitted, the CLI tries to infer a unique search dataset.
   --queries         JSON, JSONL, or CSV query set. If omitted, the CLI generates queries from sample items.
-  --query-count     Maximum query count. Default: 100.
+  --query-count     Maximum query count. Defaults to all queries from --queries, or 100 generated queries when --queries is omitted.
   --top-k           Results judged per query and strategy. Default: 20.
   --max-strategies  Maximum candidate strategies. Default: 30.
   --optimizer       Candidate strategy optimizer: matrix or spa. Default: matrix.
