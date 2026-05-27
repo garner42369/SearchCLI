@@ -4,7 +4,7 @@
 
 # SearchCLI
 
-English | [中文README](README.zh_CN.md)
+English | [简体中文](README.zh_CN.md) | [日本語](README.ja_JP.md)
 
 Connect stable, tunable search, recommendation, and conversational retrieval to your agent system or business system.
 
