@@ -104,6 +104,8 @@ export default class ItemApply extends Command {
     const { flags } = await this.parse(ItemApply);
     await runItemApplyCommand({
       baseUrl: flags['base-url'],
+      controlPlaneBaseUrl: flags['control-plane-base-url'],
+      dataPlaneBaseUrl: flags['data-plane-base-url'],
       accessKeyId: flags.ak,
       secretKey: flags.sk,
       region: flags.region,

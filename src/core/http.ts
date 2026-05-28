@@ -4,7 +4,6 @@
 import './node-bootstrap';
 import type { ServiceConfig } from './service-config';
 
-const VOLC_OPENAPI_HOST = 'https://open.volcengineapi.com';
 const DEFAULT_OPENAPI_VERSION = '2025-03-01';
 type SignedHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
@@ -23,7 +22,7 @@ export async function requestJson<T = unknown>(
   payload?: unknown,
   params?: Record<string, string>
 ): Promise<T> {
-  const baseUrl = config.baseUrl.replace(/\/+$/, '');
+  const baseUrl = config.dataPlaneBaseUrl.replace(/\/+$/, '');
   const pathName = pathname.startsWith('/') ? pathname : `/${pathname}`;
   const url = new URL(`${baseUrl}${pathName}`);
   appendQueryParams(url, params);
@@ -103,11 +102,9 @@ function translateOpenApiPath(config: ServiceConfig, pathname: string, params?: 
   const parsedPath = new URL(pathname, 'https://placeholder.local');
   const matched = parsedPath.pathname.match(/^(?:\/open|\/api\/v1)\/([^/]+)\/?$/);
   if (!matched) return undefined;
-  const gatewayBase = resolveOpenApiGatewayBase(config.baseUrl);
-  if (!gatewayBase) return undefined;
 
   const [, action] = matched;
-  const url = new URL(gatewayBase);
+  const url = new URL(config.controlPlaneBaseUrl);
   url.searchParams.set('Action', action);
   url.searchParams.set('Version', DEFAULT_OPENAPI_VERSION);
   url.searchParams.set('Region', config.region);
@@ -120,38 +117,6 @@ function translateOpenApiPath(config: ServiceConfig, pathname: string, params?: 
   }
 
   return url;
-}
-
-function resolveOpenApiGatewayBase(baseUrl: string): string | undefined {
-  let parsed: URL;
-  try {
-    parsed = new URL(baseUrl);
-  } catch {
-    return undefined;
-  }
-
-  const host = parsed.host.toLowerCase();
-
-  if (host === 'open.volcengineapi.com') {
-    return VOLC_OPENAPI_HOST;
-  }
-
-  if (/^aisearch\.[a-z0-9-]+\.volces\.com$/i.test(host)) {
-    return VOLC_OPENAPI_HOST;
-  }
-
-  if (
-    /^aisearch\.[a-z0-9-]+\.volcengineapi\.com$/i.test(host) ||
-    /^aisearch\.[a-z0-9-]+\.byteplusapi\.com$/i.test(host)
-  ) {
-    return `${parsed.protocol}//${parsed.host}`;
-  }
-
-  return undefined;
-}
-
-function shouldUseVolcOpenApiGateway(baseUrl: string): boolean {
-  return resolveOpenApiGatewayBase(baseUrl) !== undefined;
 }
 
 async function buildHeaders(

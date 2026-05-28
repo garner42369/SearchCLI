@@ -31,6 +31,8 @@ export default class SearchTuneCompare extends Command {
     const { flags } = await this.parse(SearchTuneCompare);
     await runSearchTuneCompareCommand({
       baseUrl: flags['base-url'],
+      controlPlaneBaseUrl: flags['control-plane-base-url'],
+      dataPlaneBaseUrl: flags['data-plane-base-url'],
       accessKeyId: flags.ak,
       secretKey: flags.sk,
       projectName: flags['project-name'],

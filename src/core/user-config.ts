@@ -17,9 +17,11 @@ import {
   type CredentialStoreMode
 } from './credential-store';
 import { ensureDir, writeJson } from './files';
+import {
+  resolveEndpointsOrThrow,
+  type EnvironmentId
+} from './environment';
 
-const DEFAULT_BASE_URL = 'https://aisearch.cn-beijing.volces.com';
-const DEFAULT_REGION = 'cn-beijing';
 const DEFAULT_SERVICE = 'aisearch';
 const DEFAULT_PROJECT_NAME = 'default';
 const DEFAULT_TIMEOUT_MS = 15000;
@@ -33,6 +35,9 @@ export const DEFAULT_AUTH_PROFILE = DEFAULT_CREDENTIAL_PROFILE;
 
 const cliProfileSchema = z.object({
   baseUrl: z.string().url().optional(),
+  controlPlaneBaseUrl: z.string().url().optional(),
+  dataPlaneBaseUrl: z.string().url().optional(),
+  environmentId: z.string().min(1).optional(),
   projectName: z.string().min(1).optional(),
   region: z.string().min(1).optional(),
   credentialStore: credentialStoreModeSchema.optional(),
@@ -41,6 +46,9 @@ const cliProfileSchema = z.object({
 
 const cliConfigSchema = z.object({
   baseUrl: z.string().url().optional(),
+  controlPlaneBaseUrl: z.string().url().optional(),
+  dataPlaneBaseUrl: z.string().url().optional(),
+  environmentId: z.string().min(1).optional(),
   service: z.string().min(1).optional(),
   accessKeyId: z.string().min(1).optional(),
   secretKey: z.string().min(1).optional(),
@@ -70,6 +78,9 @@ export type VikingCliProfile = z.infer<typeof cliProfileSchema>;
 export interface ResolvedCliDefaults {
   activeProfile: string;
   baseUrl: string;
+  controlPlaneBaseUrl: string;
+  dataPlaneBaseUrl: string;
+  environmentId?: EnvironmentId;
   service: string;
   accessKeyId?: string;
   secretKey?: string;
@@ -95,6 +106,9 @@ export interface ResolvedCliDefaults {
 
 const configKeySpecs = {
   'base-url': { property: 'baseUrl', type: 'string', secret: false },
+  'control-plane-base-url': { property: 'controlPlaneBaseUrl', type: 'string', secret: false },
+  'data-plane-base-url': { property: 'dataPlaneBaseUrl', type: 'string', secret: false },
+  'environment-id': { property: 'environmentId', type: 'string', secret: false },
   'project-name': { property: 'projectName', type: 'string', secret: false },
   ak: { property: 'accessKeyId', type: 'string', secret: false, visible: false, managedBy: 'auth' },
   sk: { property: 'secretKey', type: 'string', secret: true, visible: false, managedBy: 'auth' },
@@ -252,9 +266,37 @@ export function resolveCliDefaults(input: Partial<ResolvedCliDefaults> = {}, cus
     throw credentialLoadError;
   }
 
+  const explicitRegion =
+    input.region ??
+    optionalEnvString(process.env.VIKING_REGION) ??
+    profileConfig.region ??
+    stored.region;
+
+  const endpoints = resolveEndpointsOrThrow({
+    controlPlaneBaseUrl:
+      input.controlPlaneBaseUrl ??
+      optionalEnvString(process.env.VIKING_CONTROL_PLANE_BASE_URL) ??
+      profileConfig.controlPlaneBaseUrl ??
+      stored.controlPlaneBaseUrl,
+    dataPlaneBaseUrl:
+      input.dataPlaneBaseUrl ??
+      optionalEnvString(process.env.VIKING_DATA_PLANE_BASE_URL) ??
+      profileConfig.dataPlaneBaseUrl ??
+      stored.dataPlaneBaseUrl,
+    baseUrl:
+      input.baseUrl ??
+      optionalEnvString(process.env.VIKING_BASE_URL) ??
+      profileConfig.baseUrl ??
+      stored.baseUrl,
+    region: explicitRegion
+  });
+
   return {
     activeProfile,
-    baseUrl: input.baseUrl ?? optionalEnvString(process.env.VIKING_BASE_URL) ?? profileConfig.baseUrl ?? stored.baseUrl ?? DEFAULT_BASE_URL,
+    baseUrl: endpoints.dataPlaneBaseUrl,
+    controlPlaneBaseUrl: endpoints.controlPlaneBaseUrl,
+    dataPlaneBaseUrl: endpoints.dataPlaneBaseUrl,
+    environmentId: endpoints.envId,
     service: input.service ?? stored.service ?? DEFAULT_SERVICE,
     accessKeyId:
       input.accessKeyId ??
@@ -268,7 +310,7 @@ export function resolveCliDefaults(input: Partial<ResolvedCliDefaults> = {}, cus
     resolvedCredentialStoreMode: credentialLookup.backend ?? credentialStatus.resolvedMode,
     authSource,
     projectName: input.projectName ?? optionalEnvString(process.env.VIKING_PROJECT_NAME) ?? profileConfig.projectName ?? stored.projectName ?? DEFAULT_PROJECT_NAME,
-    region: input.region ?? optionalEnvString(process.env.VIKING_REGION) ?? profileConfig.region ?? stored.region ?? DEFAULT_REGION,
+    region: endpoints.region,
     timeoutMs:
       input.timeoutMs ??
       optionalNumber(process.env.VIKING_TIMEOUT_MS) ??

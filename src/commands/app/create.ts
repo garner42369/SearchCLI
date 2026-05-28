@@ -28,6 +28,8 @@ export default class AppCreate extends Command {
     const { flags } = await this.parse(AppCreate);
     await runAppCreateCommand({
       baseUrl: flags['base-url'],
+      controlPlaneBaseUrl: flags['control-plane-base-url'],
+      dataPlaneBaseUrl: flags['data-plane-base-url'],
       accessKeyId: flags.ak,
       secretKey: flags.sk,
       region: flags.region,
