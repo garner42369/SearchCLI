@@ -103,10 +103,11 @@ function translateOpenApiPath(config: ServiceConfig, pathname: string, params?: 
   const parsedPath = new URL(pathname, 'https://placeholder.local');
   const matched = parsedPath.pathname.match(/^(?:\/open|\/api\/v1)\/([^/]+)\/?$/);
   if (!matched) return undefined;
-  if (!shouldUseVolcOpenApiGateway(config.baseUrl)) return undefined;
+  const gatewayBase = resolveOpenApiGatewayBase(config.baseUrl);
+  if (!gatewayBase) return undefined;
 
   const [, action] = matched;
-  const url = new URL(VOLC_OPENAPI_HOST);
+  const url = new URL(gatewayBase);
   url.searchParams.set('Action', action);
   url.searchParams.set('Version', DEFAULT_OPENAPI_VERSION);
   url.searchParams.set('Region', config.region);
@@ -121,16 +122,36 @@ function translateOpenApiPath(config: ServiceConfig, pathname: string, params?: 
   return url;
 }
 
-function shouldUseVolcOpenApiGateway(baseUrl: string): boolean {
-  let host: string;
+function resolveOpenApiGatewayBase(baseUrl: string): string | undefined {
+  let parsed: URL;
   try {
-    host = new URL(baseUrl).host.toLowerCase();
+    parsed = new URL(baseUrl);
   } catch {
-    return false;
+    return undefined;
   }
 
-  if (host === 'open.volcengineapi.com') return true;
-  return /^aisearch\.[a-z0-9-]+\.volces\.com$/i.test(host);
+  const host = parsed.host.toLowerCase();
+
+  if (host === 'open.volcengineapi.com') {
+    return VOLC_OPENAPI_HOST;
+  }
+
+  if (/^aisearch\.[a-z0-9-]+\.volces\.com$/i.test(host)) {
+    return VOLC_OPENAPI_HOST;
+  }
+
+  if (
+    /^aisearch\.[a-z0-9-]+\.volcengineapi\.com$/i.test(host) ||
+    /^aisearch\.[a-z0-9-]+\.byteplusapi\.com$/i.test(host)
+  ) {
+    return `${parsed.protocol}//${parsed.host}`;
+  }
+
+  return undefined;
+}
+
+function shouldUseVolcOpenApiGateway(baseUrl: string): boolean {
+  return resolveOpenApiGatewayBase(baseUrl) !== undefined;
 }
 
 async function buildHeaders(
