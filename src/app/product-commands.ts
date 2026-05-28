@@ -169,7 +169,7 @@ export interface DataGetOptions extends ServiceCommandOptions {
 
 export interface DataDeleteOptions extends ServiceCommandOptions {
   datasetId: string;
-  ids?: string;
+  id?: string;
 }
 
 export interface SearchRunOptions extends ServiceCommandOptions {
@@ -800,6 +800,16 @@ export async function runDataWriteCommand(options: DataWriteOptions): Promise<vo
   await printResult(callRuntime(runtime => runtime.dataWrite(options.datasetId, payload), options));
 }
 
+export async function runDataDeleteCommand(options: DataDeleteOptions): Promise<void> {
+  const payload =
+    (await loadJsonInput(options.data)) ??
+    compactObject({
+      _ids: options.id ? [options.id] : undefined
+    });
+  requireNonEmptyObject(payload, 'Need --data or --id for data delete.');
+  await printResult(callRuntime(runtime => runtime.dataDelete(options.datasetId, payload), options));
+}
+
 export async function runSearchRunCommand(options: SearchRunOptions): Promise<void> {
   const config = resolveServiceConfig(toServiceConfigInput(options));
   const providedPayload = await loadJsonInput(options.data);
@@ -1372,7 +1382,7 @@ export function printProductDomainsHelp(): void {
     'vs app online-config get|update',
     'vs dataset create|get|list|delete|update|ingest',
     'vs dataset schema get|check',
-    'vs data write|import',
+    'vs data write|import|delete',
     'vs search run|scene create|list|get|update|delete',
     'vs recommend run|scene create|list|get|update|delete',
     'vs chat run'
@@ -1423,7 +1433,8 @@ COMMON FLAGS
     data: `${renderUsageBlock(
       [
         'vs data write --dataset-id <id> --fields @fields.json [service flags]',
-        'vs data import --dataset-id <id> --fields @items.json [service flags]'
+        'vs data import --dataset-id <id> --fields @items.json [service flags]',
+        'vs data delete --dataset-id <id> --id <item-id> [service flags]'
       ]
     )}
 
@@ -2394,6 +2405,9 @@ async function runDataCli(argv: string[]): Promise<void> {
       return;
     case 'import':
       await runDataImportShortcutCommand({ ...serviceOptions, datasetId, fields: optionalString(values.fields) });
+      return;
+    case 'delete':
+      await runDataDeleteCommand({ ...serviceOptions, datasetId, id: optionalString(values.id) });
       return;
     default:
       throw new Error(`Unknown data subcommand: ${action}`);
