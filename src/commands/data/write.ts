@@ -25,6 +25,8 @@ export default class DataWrite extends Command {
     const { flags } = await this.parse(DataWrite);
     await runDataWriteCommand({
       baseUrl: flags['base-url'],
+      controlPlaneBaseUrl: flags['control-plane-base-url'],
+      dataPlaneBaseUrl: flags['data-plane-base-url'],
       accessKeyId: flags.ak,
       secretKey: flags.sk,
       region: flags.region,

@@ -96,6 +96,8 @@ export async function runAuthLoginCommand(options: AuthLoginOptions): Promise<vo
   const existingConfig = await loadCliConfig();
   const defaults = resolveCliDefaults({
     baseUrl: options.baseUrl,
+    controlPlaneBaseUrl: options.controlPlaneBaseUrl,
+    dataPlaneBaseUrl: options.dataPlaneBaseUrl,
     accessKeyId: options.accessKeyId,
     secretKey: options.secretKey,
     projectName: options.projectName,
@@ -126,6 +128,8 @@ export async function runAuthLoginCommand(options: AuthLoginOptions): Promise<vo
     accessKeyId,
     secretKey,
     baseUrl: options.baseUrl,
+    controlPlaneBaseUrl: options.controlPlaneBaseUrl,
+    dataPlaneBaseUrl: options.dataPlaneBaseUrl,
     projectName: options.projectName,
     region: options.region,
     timeoutMs: options.timeoutMs,
@@ -138,6 +142,9 @@ export async function runAuthLoginCommand(options: AuthLoginOptions): Promise<vo
     authSource: 'secure-store',
     accessKeyId: maskCredential(accessKeyId),
     baseUrl: persisted.baseUrl,
+    controlPlaneBaseUrl: persisted.controlPlaneBaseUrl,
+    dataPlaneBaseUrl: persisted.dataPlaneBaseUrl,
+    environmentId: persisted.environmentId,
     projectName: persisted.projectName,
     region: persisted.region,
     credentialStore: {
@@ -162,6 +169,8 @@ export async function runAuthImportEnvCommand(options: AuthImportEnvOptions): Pr
   const existingConfig = await loadCliConfig();
   const defaults = resolveCliDefaults({
     baseUrl: options.baseUrl,
+    controlPlaneBaseUrl: options.controlPlaneBaseUrl,
+    dataPlaneBaseUrl: options.dataPlaneBaseUrl,
     projectName: options.projectName,
     region: options.region,
     timeoutMs: options.timeoutMs,
@@ -176,6 +185,8 @@ export async function runAuthImportEnvCommand(options: AuthImportEnvOptions): Pr
     accessKeyId,
     secretKey,
     baseUrl: options.baseUrl,
+    controlPlaneBaseUrl: options.controlPlaneBaseUrl,
+    dataPlaneBaseUrl: options.dataPlaneBaseUrl,
     projectName: options.projectName,
     region: options.region,
     timeoutMs: options.timeoutMs,
@@ -184,6 +195,8 @@ export async function runAuthImportEnvCommand(options: AuthImportEnvOptions): Pr
 
   const importedKeys = ['VIKING_AK', 'VIKING_SK'];
   if (process.env.VIKING_BASE_URL || options.baseUrl) importedKeys.push('VIKING_BASE_URL');
+  if (process.env.VIKING_CONTROL_PLANE_BASE_URL || options.controlPlaneBaseUrl) importedKeys.push('VIKING_CONTROL_PLANE_BASE_URL');
+  if (process.env.VIKING_DATA_PLANE_BASE_URL || options.dataPlaneBaseUrl) importedKeys.push('VIKING_DATA_PLANE_BASE_URL');
   if (process.env.VIKING_PROJECT_NAME || options.projectName) importedKeys.push('VIKING_PROJECT_NAME');
   if (process.env.VIKING_REGION || options.region) importedKeys.push('VIKING_REGION');
 
@@ -195,6 +208,9 @@ export async function runAuthImportEnvCommand(options: AuthImportEnvOptions): Pr
     authSource: 'secure-store',
     accessKeyId: maskCredential(accessKeyId),
     baseUrl: persisted.baseUrl,
+    controlPlaneBaseUrl: persisted.controlPlaneBaseUrl,
+    dataPlaneBaseUrl: persisted.dataPlaneBaseUrl,
+    environmentId: persisted.environmentId,
     projectName: persisted.projectName,
     region: persisted.region,
     credentialStore: {
@@ -413,6 +429,9 @@ export async function runAuthStatusCommand(options: AuthStatusOptions = {}): Pro
     source: defaults.authSource,
     accessKeyId: defaults.accessKeyId ? maskCredential(defaults.accessKeyId) : null,
     baseUrl: defaults.baseUrl,
+    controlPlaneBaseUrl: defaults.controlPlaneBaseUrl,
+    dataPlaneBaseUrl: defaults.dataPlaneBaseUrl,
+    environmentId: defaults.environmentId,
     projectName: defaults.projectName,
     region: defaults.region,
     profileConfig: getCliProfile(currentConfig, defaults.activeProfile) ?? null,
@@ -433,6 +452,9 @@ export async function runAuthStatusCommand(options: AuthStatusOptions = {}): Pro
       name: entry.name,
       active: entry.active,
       baseUrl: entry.config.baseUrl ?? null,
+      controlPlaneBaseUrl: entry.config.controlPlaneBaseUrl ?? null,
+      dataPlaneBaseUrl: entry.config.dataPlaneBaseUrl ?? null,
+      environmentId: entry.config.environmentId ?? null,
       projectName: entry.config.projectName ?? currentConfig.projectName ?? defaults.projectName,
       region: entry.config.region ?? null,
       credentialStore: entry.config.credentialStore ?? currentConfig.credentialStore ?? 'auto'
@@ -486,6 +508,9 @@ export async function runAuthListCommand(): Promise<void> {
       name: entry.name,
       active: entry.active,
       baseUrl: entry.config.baseUrl ?? null,
+      controlPlaneBaseUrl: entry.config.controlPlaneBaseUrl ?? null,
+      dataPlaneBaseUrl: entry.config.dataPlaneBaseUrl ?? null,
+      environmentId: entry.config.environmentId ?? null,
       region: entry.config.region ?? null,
       credentialStore: preferredMode,
       resolvedBackend: backend ?? getCredentialStoreStatus(preferredMode, entry.name).resolvedMode,
@@ -542,7 +567,8 @@ export async function runDoctorCommand(): Promise<void> {
   if (resolved.accessKeyId && resolved.secretKey) {
     try {
       const serviceConfig = resolveServiceConfig({
-        baseUrl: resolved.baseUrl,
+        controlPlaneBaseUrl: resolved.controlPlaneBaseUrl,
+        dataPlaneBaseUrl: resolved.dataPlaneBaseUrl,
         accessKeyId: resolved.accessKeyId,
         secretKey: resolved.secretKey,
         region: resolved.region,
@@ -564,6 +590,9 @@ export async function runDoctorCommand(): Promise<void> {
     configPath: resolveCliConfigPath(),
     resolved: {
       baseUrl: resolved.baseUrl,
+      controlPlaneBaseUrl: resolved.controlPlaneBaseUrl,
+      dataPlaneBaseUrl: resolved.dataPlaneBaseUrl,
+      environmentId: resolved.environmentId,
       projectName: resolved.projectName,
       region: resolved.region,
       authSource: resolved.authSource,
@@ -621,8 +650,8 @@ function printDomainHelp(domain: string): void {
   const helpByDomain: Record<string, string> = {
     auth: renderUsageBlock(
       [
-        'vs auth login [--profile <name>] [--ak <ak>] [--sk <sk>] [--base-url <url>] [--region <region>] [--store auto|keychain|file|ephemeral] [--no-prompt] [--format <format>]',
-        'vs auth import-env [--profile <name>] [--base-url <url>] [--region <region>] [--store auto|keychain|file|ephemeral] [--format <format>]',
+        'vs auth login [--profile <name>] [--ak <ak>] [--sk <sk>] [--base-url <url>] [--control-plane-base-url <url>] [--data-plane-base-url <url>] [--region <region>] [--store auto|keychain|file|ephemeral] [--no-prompt] [--format <format>]',
+        'vs auth import-env [--profile <name>] [--base-url <url>] [--control-plane-base-url <url>] [--data-plane-base-url <url>] [--region <region>] [--store auto|keychain|file|ephemeral] [--format <format>]',
         'vs auth status [--profile <name>] [--format <format>]',
         'vs auth logout [--profile <name>] [--store auto|keychain|file|ephemeral] [--format <format>]',
         'vs auth list [--format <format>]',
@@ -737,6 +766,8 @@ function parseStandaloneAuthOptions(argv: string[]): AuthLoginOptions & { positi
       jq: { type: 'string', short: 'q' },
       output: { type: 'string', short: 'o' },
       'base-url': { type: 'string' },
+      'control-plane-base-url': { type: 'string' },
+      'data-plane-base-url': { type: 'string' },
       'project-name': { type: 'string' },
       ak: { type: 'string' },
       sk: { type: 'string' },
@@ -750,6 +781,8 @@ function parseStandaloneAuthOptions(argv: string[]): AuthLoginOptions & { positi
   return {
     positionals,
     baseUrl: optionalString(values['base-url']),
+    controlPlaneBaseUrl: optionalString(values['control-plane-base-url']),
+    dataPlaneBaseUrl: optionalString(values['data-plane-base-url']),
     accessKeyId: optionalString(values.ak),
     secretKey: optionalString(values.sk),
     projectName: optionalString(values['project-name']),
@@ -845,6 +878,8 @@ async function persistAuthCredentials(options: {
   accessKeyId: string;
   secretKey: string;
   baseUrl?: string;
+  controlPlaneBaseUrl?: string;
+  dataPlaneBaseUrl?: string;
   projectName?: string;
   region?: string;
   timeoutMs?: number;
@@ -854,6 +889,9 @@ async function persistAuthCredentials(options: {
   savedBackend: ReturnType<typeof saveServiceCredentialsSync>;
   configPath: string;
   baseUrl: string;
+  controlPlaneBaseUrl: string;
+  dataPlaneBaseUrl: string;
+  environmentId?: string;
   projectName: string;
   region: string;
 }> {
@@ -868,11 +906,21 @@ async function persistAuthCredentials(options: {
     options.selectedProfile
   );
 
+  const controlPlaneBaseUrl = options.controlPlaneBaseUrl ?? options.defaults.controlPlaneBaseUrl;
+  const dataPlaneBaseUrl = options.dataPlaneBaseUrl ?? options.defaults.dataPlaneBaseUrl;
+  const environmentId = options.defaults.environmentId;
+  const baseUrl = options.baseUrl ?? options.defaults.baseUrl;
+  const projectName = options.projectName ?? options.defaults.projectName;
+  const region = options.region ?? options.defaults.region;
+
   let nextConfig = setActiveCliProfile(options.existingConfig, options.selectedProfile);
   nextConfig = upsertCliProfile(nextConfig, options.selectedProfile, {
-    baseUrl: options.baseUrl ?? options.defaults.baseUrl,
-    projectName: options.projectName ?? options.defaults.projectName,
-    region: options.region ?? options.defaults.region,
+    baseUrl,
+    controlPlaneBaseUrl,
+    dataPlaneBaseUrl,
+    environmentId,
+    projectName,
+    region,
     credentialStore: selectedStore,
     timeoutMs: options.timeoutMs ?? options.defaults.timeoutMs
   });
@@ -886,9 +934,12 @@ async function persistAuthCredentials(options: {
     selectedStore,
     savedBackend,
     configPath,
-    baseUrl: options.baseUrl ?? options.defaults.baseUrl,
-    projectName: options.projectName ?? options.defaults.projectName,
-    region: options.region ?? options.defaults.region
+    baseUrl,
+    controlPlaneBaseUrl,
+    dataPlaneBaseUrl,
+    environmentId,
+    projectName,
+    region
   };
 }
 

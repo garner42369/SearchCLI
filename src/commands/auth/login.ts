@@ -40,6 +40,8 @@ export default class AuthLogin extends Command {
     await runAuthLoginCommand({
       profile: flags.profile,
       baseUrl: flags['base-url'],
+      controlPlaneBaseUrl: flags['control-plane-base-url'],
+      dataPlaneBaseUrl: flags['data-plane-base-url'],
       accessKeyId: flags.ak,
       secretKey: flags.sk,
       region: flags.region,

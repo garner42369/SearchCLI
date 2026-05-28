@@ -27,6 +27,8 @@ export default class DatasetIngest extends Command {
     const { flags } = await this.parse(DatasetIngest);
     await runDatasetIngestWorkflowCommand({
       baseUrl: flags['base-url'],
+      controlPlaneBaseUrl: flags['control-plane-base-url'],
+      dataPlaneBaseUrl: flags['data-plane-base-url'],
       accessKeyId: flags.ak,
       secretKey: flags.sk,
       region: flags.region,

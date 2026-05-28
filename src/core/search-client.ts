@@ -61,7 +61,7 @@ export class VikingSearchClient {
   }
 
   private buildUrl(): string {
-    const base = this.config.baseUrl.replace(/\/+$/, '');
+    const base = this.config.dataPlaneBaseUrl.replace(/\/+$/, '');
     const scene = this.config.sceneId ? `/${this.config.sceneId}` : '';
     return `${base}/api/v1/application/${this.config.applicationId}/search${scene}`;
   }

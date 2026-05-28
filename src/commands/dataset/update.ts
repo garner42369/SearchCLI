@@ -21,6 +21,8 @@ export default class DatasetUpdate extends Command {
     const { flags } = await this.parse(DatasetUpdate);
     await runDatasetUpdateCommand({
       baseUrl: flags['base-url'],
+      controlPlaneBaseUrl: flags['control-plane-base-url'],
+      dataPlaneBaseUrl: flags['data-plane-base-url'],
       accessKeyId: flags.ak,
       secretKey: flags.sk,
       region: flags.region,

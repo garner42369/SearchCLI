@@ -30,6 +30,8 @@ export default class AuthImportEnv extends Command {
     await runAuthImportEnvCommand({
       profile: flags.profile,
       baseUrl: flags['base-url'],
+      controlPlaneBaseUrl: flags['control-plane-base-url'],
+      dataPlaneBaseUrl: flags['data-plane-base-url'],
       region: flags.region,
       credentialStore: flags.store as 'auto' | 'keychain' | 'file' | 'ephemeral' | undefined
     });

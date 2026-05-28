@@ -32,6 +32,8 @@ export default class SearchTunePlan extends Command {
     const { flags } = await this.parse(SearchTunePlan);
     await runSearchTunePlanCommand({
       baseUrl: flags['base-url'],
+      controlPlaneBaseUrl: flags['control-plane-base-url'],
+      dataPlaneBaseUrl: flags['data-plane-base-url'],
       accessKeyId: flags.ak,
       secretKey: flags.sk,
       projectName: flags['project-name'],

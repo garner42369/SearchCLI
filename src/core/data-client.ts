@@ -45,7 +45,7 @@ export class VikingDataClient {
   }
 
   private buildUrl(): string {
-    const base = this.config.baseUrl.replace(/\/+$/, '');
+    const base = this.config.dataPlaneBaseUrl.replace(/\/+$/, '');
     return `${base}/api/v1/dataset/${this.config.datasetId}/get_item`;
   }
 

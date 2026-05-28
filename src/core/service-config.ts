@@ -5,7 +5,8 @@ import { z } from 'zod';
 import { resolveCliDefaults } from './user-config';
 
 export interface ServiceConfig {
-  baseUrl: string;
+  controlPlaneBaseUrl: string;
+  dataPlaneBaseUrl: string;
   service: string;
   accessKeyId?: string;
   secretKey?: string;
@@ -17,6 +18,8 @@ export interface ServiceConfig {
 
 export interface ServiceConfigInput {
   baseUrl?: string;
+  controlPlaneBaseUrl?: string;
+  dataPlaneBaseUrl?: string;
   service?: string;
   accessKeyId?: string;
   secretKey?: string;
@@ -26,7 +29,8 @@ export interface ServiceConfigInput {
 }
 
 const serviceConfigSchema = z.object({
-  baseUrl: z.string().url(),
+  controlPlaneBaseUrl: z.string().url(),
+  dataPlaneBaseUrl: z.string().url(),
   service: z.string().min(1),
   accessKeyId: z.string().optional(),
   secretKey: z.string().optional(),
@@ -38,6 +42,8 @@ const serviceConfigSchema = z.object({
 export function resolveServiceConfig(input: ServiceConfigInput): ServiceConfig {
   const defaults = resolveCliDefaults({
     baseUrl: input.baseUrl,
+    controlPlaneBaseUrl: input.controlPlaneBaseUrl,
+    dataPlaneBaseUrl: input.dataPlaneBaseUrl,
     service: input.service,
     accessKeyId: input.accessKeyId,
     secretKey: input.secretKey,
@@ -47,7 +53,8 @@ export function resolveServiceConfig(input: ServiceConfigInput): ServiceConfig {
   });
 
   const resolved = serviceConfigSchema.parse({
-    baseUrl: defaults.baseUrl,
+    controlPlaneBaseUrl: defaults.controlPlaneBaseUrl,
+    dataPlaneBaseUrl: defaults.dataPlaneBaseUrl,
     service: defaults.service,
     accessKeyId: defaults.accessKeyId,
     secretKey: defaults.secretKey,
