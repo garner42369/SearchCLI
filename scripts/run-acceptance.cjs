@@ -30,6 +30,7 @@ async function main() {
   await runTest('root-help', testRootHelp);
   await runTest('skill-list', testSkillList);
   await runTest('skill-show', testSkillShow);
+  await runTest('validate-skills-space-path', testValidateSkillsSpacePath);
   await runTest('search-tune-help', testSearchTuneHelp);
   await runTest('search-run-requires-scene-help', testSearchRunRequiresSceneHelp);
   await runTest('search-tune-plan', testSearchTunePlan);
@@ -148,6 +149,27 @@ async function testSkillShow() {
   assert.equal(payload.name, 'vs-item-onboarding');
   assert.match(payload.description, /item-level onboarding/i);
   return `${command.prefix} skill show --name vs-item-onboarding --json`;
+}
+
+async function testValidateSkillsSpacePath() {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'viking acceptance skills '));
+  const copiedRoot = path.join(workspace, 'repo with spaces');
+  try {
+    fs.mkdirSync(path.join(copiedRoot, 'scripts'), { recursive: true });
+    fs.mkdirSync(path.join(copiedRoot, 'src'), { recursive: true });
+    fs.copyFileSync(path.join(root, 'scripts', 'validate-skills.mjs'), path.join(copiedRoot, 'scripts', 'validate-skills.mjs'));
+    fs.cpSync(path.join(root, 'skills'), path.join(copiedRoot, 'skills'), { recursive: true });
+    fs.cpSync(path.join(root, 'src', 'commands'), path.join(copiedRoot, 'src', 'commands'), { recursive: true });
+
+    const { stdout } = await execFileAsync('node', [path.join(copiedRoot, 'scripts', 'validate-skills.mjs')], {
+      cwd: copiedRoot,
+      maxBuffer: 16 * 1024 * 1024
+    });
+    assert.match(stdout, /validated \d+ skill\(s\)/);
+    return `node "${path.join(copiedRoot, 'scripts', 'validate-skills.mjs')}"`;
+  } finally {
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
 }
 
 async function testDatasetListHelp() {

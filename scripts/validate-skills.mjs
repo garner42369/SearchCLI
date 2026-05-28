@@ -5,13 +5,15 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const REQUIRED_HEADINGS = ['## When to Use', '## Preconditions', '## Commands', '## Workflow', '## Constraints'];
 const ALLOWED_CATEGORIES = new Set(['shared', 'app', 'data', 'search', 'recommend', 'chat', 'openapi', 'workflow']);
 const ALLOWED_APPLIES_TO = new Set(['codex', 'agents', 'external-agent']);
 const CLI_REQUIREMENT_PATTERN = /^>=\d+\.\d+\.\d+$/;
 
-const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, '..');
 const skillsRoot = path.resolve(process.argv[2] || path.join(repoRoot, 'skills'));
 const availableCommands = listAvailableVikingCommands(path.join(repoRoot, 'src', 'commands'));
 
