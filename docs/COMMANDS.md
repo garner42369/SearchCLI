@@ -120,6 +120,8 @@ SearchCLI is an interactive AI search command-line tool. Below is the list of cu
     *   Parameters: `[service flags]`
 *   `vs data import --dataset-id <id> --fields @items.json`
     *   Parameters: `[service flags]`
+*   `vs data delete --dataset-id <id> --id <item-id>`
+    *   Parameters: `[service flags]`
 
 ### `search` - Search Runtime and Scenes
 *   `vs search run --application-id <id> --scene-id <id> --query <text>`

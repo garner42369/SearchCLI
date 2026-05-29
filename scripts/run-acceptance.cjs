@@ -44,6 +44,7 @@ async function main() {
   await runTest('search-tune-run-help', testSearchTuneRunHelp);
   await runTest('app-list-help', testAppListHelp);
   await runTest('dataset-list-help', testDatasetListHelp);
+  await runTest('data-delete-mock', testDataDeleteMock);
   await runTest('config-summary-help', testConfigSummaryHelp);
   await runTest('item-profile', testItemProfile);
   await runTest('item-plan', testItemPlan);
@@ -184,6 +185,48 @@ async function testAppListHelp() {
   const { stdout } = await runCli(['app', '--help']);
   assert.match(stdout, /app list \[--name <text> --dataset-id <id> --industry <type> --state <state> --full\]/i);
   return `${command.prefix} app --help`;
+}
+
+async function testDataDeleteMock() {
+  const serverState = {
+    requests: []
+  };
+  const server = await startDataDeleteMockServer(serverState);
+  try {
+    const dataHelp = await runCli(['data', '--help']);
+    assert.match(dataHelp.stdout, /data delete --dataset-id <id> --id <item-id>/i);
+
+    const { stdout } = await runCli([
+      'data',
+      'delete',
+      '--dataset-id',
+      'ds-1',
+      '--id',
+      'item-1',
+      '--ak',
+      'ak',
+      '--sk',
+      'sk',
+      '--json'
+    ], {
+      env: {
+        VIKING_CONTROL_PLANE_BASE_URL: server.baseUrl,
+        VIKING_DATA_PLANE_BASE_URL: server.baseUrl
+      }
+    });
+    const payload = JSON.parse(stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.result.deleted, true);
+    assert.deepEqual(serverState.requests, [
+      {
+        url: '/api/v1/dataset/ds-1/delete',
+        body: { _ids: ['item-1'] }
+      }
+    ]);
+    return `${command.prefix} data delete --dataset-id ds-1 --id item-1 --json`;
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
 }
 
 async function testSearchTuneHelp() {
@@ -782,6 +825,33 @@ async function startQueryGenerateMockServer(state) {
           sourceItemIds: [`item-${batchIndex}-${index + 1}`]
         }));
         res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(queries) } }] }));
+        return;
+      }
+      res.statusCode = 404;
+      res.end(JSON.stringify({ error: `unexpected path: ${req.url}` }));
+    });
+  });
+
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    close: callback => server.close(callback)
+  };
+}
+
+async function startDataDeleteMockServer(state) {
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk;
+    });
+    req.on('end', () => {
+      const parsedBody = body ? JSON.parse(body) : {};
+      res.setHeader('content-type', 'application/json');
+      if (req.url === '/api/v1/dataset/ds-1/delete') {
+        state.requests.push({ url: req.url, body: parsedBody });
+        res.end(JSON.stringify({ ok: true, result: { deleted: true, ids: parsedBody._ids } }));
         return;
       }
       res.statusCode = 404;
