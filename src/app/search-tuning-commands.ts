@@ -511,6 +511,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function toServiceConfigInput(options: SearchTuneServiceOptions): ServiceConfigInput {
   return {
     baseUrl: options.baseUrl,
+    controlPlaneBaseUrl: options.controlPlaneBaseUrl,
+    dataPlaneBaseUrl: options.dataPlaneBaseUrl,
     accessKeyId: options.accessKeyId,
     secretKey: options.secretKey,
     projectName: options.projectName,
@@ -522,6 +524,8 @@ function toServiceConfigInput(options: SearchTuneServiceOptions): ServiceConfigI
 function toRuntimeConfigInput(options: SearchTuneRunOptions) {
   return {
     baseUrl: options.baseUrl,
+    controlPlaneBaseUrl: options.controlPlaneBaseUrl,
+    dataPlaneBaseUrl: options.dataPlaneBaseUrl,
     accessKeyId: options.accessKeyId,
     secretKey: options.secretKey,
     region: options.region,
