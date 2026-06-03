@@ -203,6 +203,10 @@ async function testDataDeleteMock() {
       'ds-1',
       '--id',
       'item-1',
+      '--data-plane-base-url',
+      server.baseUrl,
+      '--timeout-ms',
+      '1000',
       '--ak',
       'ak',
       '--sk',
@@ -210,8 +214,8 @@ async function testDataDeleteMock() {
       '--json'
     ], {
       env: {
-        VIKING_CONTROL_PLANE_BASE_URL: server.baseUrl,
-        VIKING_DATA_PLANE_BASE_URL: server.baseUrl
+        VIKING_CONTROL_PLANE_BASE_URL: 'http://127.0.0.1:1',
+        VIKING_DATA_PLANE_BASE_URL: 'http://127.0.0.1:1'
       }
     });
     const payload = JSON.parse(stdout);
@@ -436,7 +440,9 @@ async function testSearchTuneQueryGenerateMock() {
         '60000',
         '--output-dir',
         workspace,
-        '--base-url',
+        '--control-plane-base-url',
+        server.baseUrl,
+        '--data-plane-base-url',
         server.baseUrl,
         '--ak',
         'ak',
@@ -515,7 +521,9 @@ async function testSearchTuneRunWorkerPoolMock() {
         '5000',
         '--output-dir',
         workspace,
-        '--base-url',
+        '--control-plane-base-url',
+        server.baseUrl,
+        '--data-plane-base-url',
         server.baseUrl,
         '--ak',
         'ak',
@@ -601,7 +609,9 @@ async function testSearchTuneRunSourceItemMock() {
         'source-item',
         '--output-dir',
         workspace,
-        '--base-url',
+        '--control-plane-base-url',
+        server.baseUrl,
+        '--data-plane-base-url',
         server.baseUrl,
         '--ak',
         'ak',
@@ -684,7 +694,9 @@ async function testSearchTuneRunLabelFailureThresholdMock() {
         '5000',
         '--output-dir',
         workspace,
-        '--base-url',
+        '--control-plane-base-url',
+        server.baseUrl,
+        '--data-plane-base-url',
         server.baseUrl,
         '--ak',
         'ak',
