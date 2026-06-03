@@ -164,6 +164,8 @@ function createRuntimeClient(options: ShortcutServiceOptions): VikingRuntimeApiC
 function toServiceConfigInput(options: ShortcutServiceOptions): ServiceConfigInput {
   return {
     baseUrl: options.baseUrl,
+    controlPlaneBaseUrl: options.controlPlaneBaseUrl,
+    dataPlaneBaseUrl: options.dataPlaneBaseUrl,
     accessKeyId: options.accessKeyId,
     secretKey: options.secretKey,
     projectName: options.projectName,

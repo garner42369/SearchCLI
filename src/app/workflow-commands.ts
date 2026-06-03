@@ -349,6 +349,8 @@ async function printWorkflowResult(
 function toServiceConfigInput(options: WorkflowServiceOptions): ServiceConfigInput {
   return {
     baseUrl: options.baseUrl,
+    controlPlaneBaseUrl: options.controlPlaneBaseUrl,
+    dataPlaneBaseUrl: options.dataPlaneBaseUrl,
     accessKeyId: options.accessKeyId,
     secretKey: options.secretKey,
     projectName: options.projectName,

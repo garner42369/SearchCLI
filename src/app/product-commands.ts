@@ -2840,6 +2840,8 @@ function parseStandaloneOptions(argv: string[]) {
       output: { type: 'string', short: 'o' },
       'output-dir': { type: 'string' },
       'base-url': { type: 'string' },
+      'control-plane-base-url': { type: 'string' },
+      'data-plane-base-url': { type: 'string' },
       ak: { type: 'string' },
       sk: { type: 'string' },
       region: { type: 'string' },
@@ -2961,6 +2963,8 @@ type StandaloneValues = ReturnType<typeof parseStandaloneOptions>;
 function toStandaloneServiceOptions(values: StandaloneValues): ServiceCommandOptions {
   return compactObject({
     baseUrl: optionalString(values['base-url']),
+    controlPlaneBaseUrl: optionalString(values['control-plane-base-url']),
+    dataPlaneBaseUrl: optionalString(values['data-plane-base-url']),
     accessKeyId: optionalString(values.ak),
     secretKey: optionalString(values.sk),
     projectName: optionalString(values['project-name']),
@@ -3002,6 +3006,8 @@ async function callRuntime(
 function toServiceConfigInput(options: ServiceCommandOptions): ServiceConfigInput {
   return {
     baseUrl: options.baseUrl,
+    controlPlaneBaseUrl: options.controlPlaneBaseUrl,
+    dataPlaneBaseUrl: options.dataPlaneBaseUrl,
     accessKeyId: options.accessKeyId,
     secretKey: options.secretKey,
     projectName: (options as ProjectScopedOptions).projectName,
