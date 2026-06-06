@@ -13,6 +13,7 @@
     "README.zh_CN.md",
     "README.ja_JP.md",
     "README.de_DE.md",
+    "README.ko_KR.md",
     "package.json"
   ],
   "engines": {
