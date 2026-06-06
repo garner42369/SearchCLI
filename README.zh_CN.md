@@ -4,7 +4,7 @@
 
 # SearchCLI
 
-[English](README.md) | 简体中文 | [日本語](README.ja_JP.md) | [Deutsch](README.de_DE.md)
+[English](README.md) | 简体中文 | [日本語](README.ja_JP.md) | [Deutsch](README.de_DE.md) | [한국어](README.ko_KR.md)
 
 将稳定、可调优的搜索、推荐与对话检索能力接入你的 Agent 系统或业务系统。
 
