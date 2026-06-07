@@ -14,6 +14,7 @@
     "README.ja_JP.md",
     "README.de_DE.md",
     "README.ko_KR.md",
+    "README.fr_FR.md",
     "package.json"
   ],
   "engines": {
