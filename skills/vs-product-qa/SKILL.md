@@ -1,10 +1,10 @@
 ---
 name: vs-product-qa
-description: "Answer Viking AI Search product questions (concepts, onboarding paths, API auth, configuration, error diagnosis) by grounding every claim in either the installed `vs` CLI's own output or official Volcengine documentation. Never fabricate."
+description: "Answer Viking AI Search product questions, CLI usage questions, API/auth questions, configuration questions, and troubleshooting questions by grounding every claim in either the installed `vs` CLI's own output or official Volcengine documentation. Never fabricate."
 category: shared
 applies_to: codex, agents, external-agent
 requires_cli: ">=0.2.0"
-keywords: viking ai search, product question, how to, what is, api, authentication, ak sk, dataset, scene, error, troubleshooting, docs, help, faq
+keywords: viking ai search, product question, product concept, concept, how to, usage, api, authentication, ak sk, configuration, error, troubleshooting, docs, official docs, help, faq
 commands: doctor, auth status, llm status, skill list, skill search, skill show
 ---
 
@@ -13,6 +13,8 @@ commands: doctor, auth status, llm status, skill list, skill search, skill show
 ## When to Use
 
 Use this skill when the user asks product questions about Viking AI Search and expects a grounded answer instead of agent memory.
+
+Broad trigger intents include product concepts, capability explanations, CLI usage, API/auth semantics, configuration guidance, console UI paths, billing/quota questions, and local error troubleshooting.
 
 Typical trigger questions include:
 
@@ -36,6 +38,7 @@ If another skill is active and the user asks a product-concept question outside 
 - Official Volcengine documentation can be fetched when answering product concepts, API field semantics, purchase, billing, quota, or console UI path questions.
 - The agent must classify the question before choosing a knowledge source.
 - The agent must not rely on repository source code, generated repo snapshots, or training memory as the source of truth in customer environments.
+- If the selected source cannot answer the question, explicitly say the point is not covered by `vs` help or the official documentation checked in this turn, then suggest support ticket / oncall escalation.
 
 ## Customer Environment Principle
 
@@ -115,12 +118,13 @@ These may be used later only if they become publicly available and are actually 
 1. Classify the question using **Question Routing** before choosing a source.
 2. Fetch from the chosen source:
    - CLI route: run the relevant `vs ... --help`, status, doctor, or skill command.
+   - Local CLI error route: use the error's own recovery output from this turn first; only run help/status commands if the recovery output is missing or ambiguous.
    - Docs route: follow the documentation source acquisition protocol.
 3. Extract only the relevant section or output lines needed to answer.
 4. Answer in the required output format.
 5. If write operations such as `apply`, `update`, `create`, or `bind` are mentioned, explain only the safe dry-run or draft path unless the user explicitly asks to run a specialized workflow. This skill must not execute write commands.
 6. If credentials, environment variables, or `vs auth import-env` are involved, append the AK/SK security notice from [references/aksk-notice.md](references/aksk-notice.md).
-7. If no source can answer, say `unknown`, cite the root documentation URL or the CLI command checked, and suggest support ticket / oncall escalation.
+7. If no source can answer, say `unknown` and explicitly state that the checked `vs` help or official documentation does not cover this point; cite the root documentation URL or the CLI command checked, and suggest support ticket / oncall escalation.
 
 ## Output Format
 
@@ -148,7 +152,7 @@ Rules:
 4. **CLI overrides docs**: if CLI help and docs disagree, trust the installed CLI and say the docs may be stale.
 5. **No silent execution**: do not run write commands such as `apply`, `update`, `create`, or `bind` on the user's behalf. Emit explanations, drafts, or dry-run guidance only.
 6. **AK/SK notice**: whenever credentials, environment variables, or `vs auth import-env` are involved, append the AK/SK security notice from [references/aksk-notice.md](references/aksk-notice.md).
-7. **Honest unknowns**: if all available sources cannot answer, return `unknown` plus the root documentation URL or a support-ticket suggestion. Do not fabricate.
+7. **Honest unknowns**: if all available sources cannot answer, return `unknown`, explicitly say the checked `vs` help or official documentation does not cover the point, and include the root documentation URL or a support-ticket / oncall suggestion. Do not fabricate.
 8. **Honest fallback**: if exact sub-page lookup fails and the answer falls back to the chapter root, explicitly say: "exact sub-page lookup failed; here is the chapter root."
 9. **No large doc dumps**: summarize in your own words and link the source instead of pasting long documentation sections.
 10. **Delegation**: if the user asks for sign-up / purchase, item onboarding, or search tuning execution, hand off using [references/delegation.md](references/delegation.md) instead of answering inside this skill.
