@@ -119,3 +119,4 @@ This first version is for similarity tuning. It defaults to text-query/text-item
 - Do not call a result "optimal" or "best" unless a completed `search tune run` report exists. If the report used `--label-source source-item`, call it a fast source-item silver-label recommendation and explain that LLM or human labels can be used for higher-confidence validation.
 - Do not delete or prune `.viking/search-tuning` artifacts unless the user explicitly asks.
 - If `search tune run` generates queries automatically, tell the user the query set is synthetic and should be reviewed for high-risk usage.
+- If the user asks a product concept, capability, API field, console UI path, purchase, billing, or general troubleshooting question outside this tuning workflow, temporarily hand off to `vs-product-qa`; return to this workflow only after the grounded product answer is complete.

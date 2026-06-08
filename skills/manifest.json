@@ -24,6 +24,20 @@
       ]
     },
     {
+      "name": "vs-onboarding-purchase",
+      "files": [
+        "vs-onboarding-purchase/SKILL.md"
+      ]
+    },
+    {
+      "name": "vs-product-qa",
+      "files": [
+        "vs-product-qa/SKILL.md",
+        "vs-product-qa/references/aksk-notice.md",
+        "vs-product-qa/references/delegation.md"
+      ]
+    },
+    {
       "name": "vs-recommend",
       "files": [
         "vs-recommend/SKILL.md"
