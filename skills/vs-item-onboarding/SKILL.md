@@ -92,6 +92,8 @@ Before provisioning anything, the agent MUST first decide whether the requested 
 
 If the user makes a follow-up edit (rename a field, drop a group member, switch `--type`, etc.) after this checklist passed, MUST re-run the affected checks before apply.
 
+- If provisioning failure analysis or user follow-up turns into a product concept, capability, API field, console UI path, purchase, billing, or general troubleshooting question outside this onboarding workflow, temporarily hand off to `vs-product-qa`; return to this workflow only after the grounded product answer is complete.
+
 ## References
 
 - Full workflow & extended guidance: [references/workflow.md](references/workflow.md)

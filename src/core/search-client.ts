@@ -10,6 +10,7 @@ import {
   normalizeSearchMode,
   normalizeUserDefinedRecallMode
 } from './search-mode';
+import { formatMissingVikingAuthMessage } from './auth-errors';
 
 export class VikingSearchClient {
   constructor(private readonly config: RuntimeConfig) {}
@@ -68,9 +69,7 @@ export class VikingSearchClient {
 
   private buildHeaders(urlString: string, body: string): Record<string, string> {
     if (!this.config.accessKeyId || !this.config.secretKey) {
-      throw new Error(
-        'Missing Viking auth. Run `vs auth import-env`, `vs auth login`, set VIKING_AK/VIKING_SK, or pass --ak/--sk.'
-      );
+      throw new Error(formatMissingVikingAuthMessage());
     }
 
     const url = new URL(urlString);

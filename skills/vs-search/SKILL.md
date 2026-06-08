@@ -77,3 +77,4 @@ If you set `Mode=UserDefined(4)`, you SHOULD also set `UserDefinedRecallMode` in
 - Do not assume `--help`, skill text, and the installed command implementation are perfectly aligned; verify the actual command behavior before making high-risk scene changes
 - For scene updates, prefer a small scoped payload and a readback check over writing a hand-crafted full config unless a full config update is actually required
 - If a scene update unexpectedly fails or appears to no-op, verify the accepted flags and payload shape before retrying with a broader config object
+- If a command failure or user follow-up turns into a product concept, capability, API field, console UI path, purchase, billing, or general troubleshooting question outside this search workflow, temporarily hand off to `vs-product-qa`; return to this workflow only after the grounded product answer is complete.

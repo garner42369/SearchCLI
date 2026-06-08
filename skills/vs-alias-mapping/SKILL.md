@@ -35,6 +35,7 @@ Invoke this skill when the user refers to the CLI tool as "Search CLI" or "searc
 ## Constraints
 - Never execute a command literally named `search_cli`.
 - Always use the `vs` prefix and `VIKING_` environment variables.
+- If alias resolution or mapped CLI execution fails and the user asks a product concept, capability, API field, console UI path, purchase, billing, or general troubleshooting question outside alias mapping, temporarily hand off to `vs-product-qa`; return to this workflow only after the grounded product answer is complete.
 
 <system-rule>
 IMPORTANT ALIAS MAPPING:

@@ -52,3 +52,4 @@ Use this skill for recommendation runtime checks, recommend scene management, an
 - When reporting results, summarize the scene, the user context, and the raw response before proposing tuning changes
 - Do not invent item titles or explanations. Ground every recommendation summary in the actual response payload
 - If you show only a subset such as Top 5, explicitly say that the full response contains more items
+- If a command failure or user follow-up turns into a product concept, capability, API field, console UI path, purchase, billing, or general troubleshooting question outside this recommend workflow, temporarily hand off to `vs-product-qa`; return to this workflow only after the grounded product answer is complete.

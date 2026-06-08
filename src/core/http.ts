@@ -2,10 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import './node-bootstrap';
+import { formatMissingVikingAuthMessage } from './auth-errors';
 import type { ServiceConfig } from './service-config';
 
 const DEFAULT_OPENAPI_VERSION = '2025-03-01';
 type SignedHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly statusCode: number | undefined,
+    readonly apiCode: string | undefined,
+    readonly apiMessage: string | undefined,
+    readonly responseBody: unknown
+  ) {
+    super(message);
+    this.name = 'ApiRequestError';
+  }
+}
 
 export async function postJson<T = unknown>(
   config: ServiceConfig,
@@ -71,28 +85,29 @@ async function sendSignedJson<T = unknown>(
   const rawText = await response.text();
   const parsed = parseMaybeJson(rawText);
   if (!response.ok) {
+    const apiError = extractResponseMetadataError(parsed);
     console.error(
       `[HTTP Error] Method: ${method} URL: ${url.toString()}\nPayload: ${body}\nResponse: ${typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2)}`
     );
-    throw new Error(
-      `Request failed: ${response.status} ${response.statusText}\n${typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2)}`
+    throw new ApiRequestError(
+      `Request failed: ${response.status} ${response.statusText}${apiError ? ` [${apiError.code}]: ${apiError.message}` : ''}`,
+      response.status,
+      apiError?.code,
+      apiError?.message,
+      parsed
     );
   }
 
   // Detect logical errors returned in the OpenApi wrapper even if HTTP status is 200 OK
-  if (
-    typeof parsed === 'object' &&
-    parsed !== null &&
-    'ResponseMetadata' in parsed &&
-    typeof (parsed as any).ResponseMetadata === 'object' &&
-    (parsed as any).ResponseMetadata !== null &&
-    'Error' in (parsed as any).ResponseMetadata &&
-    (parsed as any).ResponseMetadata.Error !== null
-  ) {
-    const apiError = (parsed as any).ResponseMetadata.Error;
-    const code = apiError.Code || 'UnknownError';
-    const message = apiError.Message || 'An unknown API error occurred.';
-    throw new Error(`API Error [${code}]: ${message}\nPayload: ${body}`);
+  const apiError = extractResponseMetadataError(parsed);
+  if (apiError) {
+    throw new ApiRequestError(
+      `API Error [${apiError.code}]: ${apiError.message}`,
+      response.status,
+      apiError.code,
+      apiError.message,
+      parsed
+    );
   }
 
   return parsed as T;
@@ -156,9 +171,7 @@ async function buildHeaders(
     return headers;
   }
 
-  throw new Error(
-    'Missing Viking auth. Run `vs auth import-env`, `vs auth login`, set VIKING_AK/VIKING_SK, or pass --ak/--sk.'
-  );
+  throw new Error(formatMissingVikingAuthMessage());
 }
 
 function parseMaybeJson(rawText: string): unknown {
@@ -169,6 +182,20 @@ function parseMaybeJson(rawText: string): unknown {
   } catch {
     return rawText;
   }
+}
+
+function extractResponseMetadataError(value: unknown): { code: string; message: string } | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const metadata = (value as Record<string, unknown>).ResponseMetadata;
+  if (!metadata || typeof metadata !== 'object') return undefined;
+  const error = (metadata as Record<string, unknown>).Error;
+  if (!error || typeof error !== 'object') return undefined;
+  const code = (error as Record<string, unknown>).Code;
+  const message = (error as Record<string, unknown>).Message;
+  return {
+    code: typeof code === 'string' && code ? code : 'UnknownError',
+    message: typeof message === 'string' && message ? message : 'An unknown API error occurred.'
+  };
 }
 
 function appendQueryParams(url: URL, params?: Record<string, string>): void {

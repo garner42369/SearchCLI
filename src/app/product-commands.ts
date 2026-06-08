@@ -10,6 +10,7 @@ import { fetchAppStatusSnapshot, type AppStatusSnapshot } from '../core/app-stat
 import { getConsoleTopAction } from '../core/console-action-catalog';
 import { resolvePurchasePageUrl, type EnvironmentId } from '../core/environment';
 import { hasHelpFlag, isDomainHelpRequest, renderUsageBlock } from '../core/help-utils';
+import { ApiRequestError } from '../core/http';
 import { VikingOpenApiClient } from '../core/openapi-client';
 import { printOutput } from '../core/output-format';
 import { VikingRuntimeApiClient } from '../core/runtime-api-client';
@@ -464,7 +465,9 @@ export interface RecommendSuggestOptions extends ProjectScopedOptions {
   suggestConfig?: string;
 }
 
-export interface PurchaseOrderStatusOptions extends ProjectScopedOptions {}
+export interface PurchaseOrderStatusOptions extends ProjectScopedOptions {
+  suppressOutput?: boolean;
+}
 
 export interface PurchaseOrderWaitOptions extends ProjectScopedOptions {
   maxAttempts?: number;
@@ -1235,11 +1238,13 @@ export async function runPurchaseLinkCommand(options: PurchaseLinkOptions): Prom
 export async function runPurchaseOrderStatusCommand(options: PurchaseOrderStatusOptions): Promise<void> {
   const result = await getBillingOrder(options);
   assertBillingOrderHealthy(result);
-  await printResult({
-    ok: true,
-    orderFound: true,
-    response: result
-  });
+  if (!options.suppressOutput) {
+    await printResult({
+      ok: true,
+      orderFound: true,
+      response: result
+    });
+  }
 }
 
 export async function runPurchaseOrderWaitCommand(options: PurchaseOrderWaitOptions): Promise<void> {
@@ -1289,7 +1294,17 @@ function isBillingOrderNotFoundError(error: unknown): boolean {
 
 function assertBillingOrderHealthy(response: unknown): void {
   const result = extractOpenApiResult(response);
+  const opened = result?.IsAirSearchRecOpened;
   const state = Number(result?.InstanceState);
+  if (opened === false || state === 99) {
+    throw new ApiRequestError(
+      'API Error [ResourceNotFound.Instance]: Viking AI Search billing instance was not found or is not enabled.',
+      404,
+      'ResourceNotFound.Instance',
+      'Viking AI Search billing instance was not found or is not enabled.',
+      response
+    );
+  }
   if (state === 2) {
     throw new Error('Billing order exists but instance creation failed. Ask the user to revisit the purchase page and confirm the order status.');
   }
