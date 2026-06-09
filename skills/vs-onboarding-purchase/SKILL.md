@@ -120,9 +120,16 @@ that don't clearly map to an option require re-asking. If the user is unsure
 2. After the user chooses an environment, run `vs purchase link --environment-id <environment-id>` and show the returned purchase page link.
 3. Do not hardcode or rewrite the purchase page link in the agent response; use the command output as the source of truth.
 4. Show this instruction together with the URL:
-   `On the order page, complete: choose edition -> real-name verification (opened in-page; skipped if already verified) -> payment. After finishing, reply that the purchase is complete.`
+   `On the order page, complete: choose edition -> real-name verification (opened in-page; skipped if already verified) -> payment. Pay attention to the project selector on the order page; it usually defaults to default. After finishing, reply that the purchase is complete.`
+   Use the term `项目` instead of `project` when the user's latest message is Chinese.
 5. Wait for the user to clearly say that the purchase is complete, using wording such as `purchase completed`, `payment completed`, `order placed`, or `activation completed`.
 6. Do not treat vague replies such as `ok`, `opened`, `I will check`, or `I am on the page` as purchase completion.
+7. After the user explicitly confirms purchase completion, ask which project was selected on the order page. Use the term `项目` when the user's latest message is Chinese; otherwise use `project`.
+8. Use a single question only. Do not ask a second follow-up input question for project name. The question should offer:
+   - `default`
+   - another-project free-text answer, where the user directly enters the exact project name in the same question
+9. If the user selects `default`, or leaves the free-text answer empty, set `<project-name>` to `default`.
+10. If the user enters another project name, use that exact value as `<project-name>` for later order checks and local verification.
 
 ### Optional order visibility check
 
@@ -130,7 +137,7 @@ This is an optional enhancement when local AK/SK already exists. It is not the g
 
 1. After the user explicitly confirms purchase completion, run this check only if the user already has AK/SK configured and Step 1 did not already return `status: "ok"`.
 2. Run:
-   `vs purchase order wait --max-attempts 5 --poll-interval-ms 2000`
+   `vs purchase order wait --project-name <project-name> --max-attempts 5 --poll-interval-ms 2000`
 3. Interpret the command result as the source of truth for whether the order is visible:
    - success: the order is visible; continue to Step 5
    - not found during polling: the CLI retries every 2 seconds, up to 5 attempts
@@ -152,19 +159,26 @@ This is a human checkpoint. The agent must wait for explicit confirmation that t
 
 Use only the supported CLI credential flows. Never ask the user to paste AK/SK into chat.
 
-1. If `VIKING_AK` and `VIKING_SK` are already set in the user's real shell, ask the user to run `vs auth import-env`.
-2. Otherwise, if the user has an interactive terminal, ask the user to run `vs auth login`.
-3. During region selection, explicitly tell the user:
+1. Build the auth command with the project selected during Step 3/4:
+   - if `<project-name>` is `default`, the command may omit `--project-name`
+   - if `<project-name>` is not `default`, the command must include `--project-name <project-name>`
+2. If `VIKING_AK` and `VIKING_SK` are already set in the user's real shell, ask the user to run:
+   - default project: `vs auth import-env`
+   - non-default project: `vs auth import-env --project-name <project-name>`
+3. Otherwise, if the user has an interactive terminal, ask the user to run:
+   - default project: `vs auth login`
+   - non-default project: `vs auth login --project-name <project-name>`
+4. During region selection, explicitly tell the user:
    - Mainland China customers should choose `cn-beijing`.
    - Southeast Asia customers, including Indonesia, Singapore, and Malaysia, should choose `ap-southeast-1` (Johor).
    - The user chooses the region; the agent must not silently choose it.
 
 ### Step 7 - verify local readiness
 
-After credentials are imported, run `vs auth status --json` and `vs doctor --json`.
+After credentials are imported, run `vs auth status --json --project-name <project-name>` and `vs doctor --json --project-name <project-name>`.
 
 - If both pass, authentication is complete.
-- If `vs auth status --json` reports `unconfigured` or `invalid`, return to Step 6.
+- If `vs auth status --json --project-name <project-name>` reports `unconfigured` or `invalid`, return to Step 6.
 - If it reports `product-not-enabled`, return to Step 3 and ask the user to confirm purchase/opening status.
 - If it reports `network-error`, ask the user to fix connectivity or endpoint settings and retry Step 7.
 
@@ -174,7 +188,7 @@ Tell the user that authentication is complete and they can continue with `vs-ite
 
 ## Order Verification Behavior
 
-- `purchase order wait` exists so the agent can wait for order visibility when local AK/SK is already configured but `vs auth status --json` still reports `product-not-enabled`.
+- `purchase order wait --project-name <project-name>` exists so the agent can wait for order visibility when local AK/SK is already configured but `vs auth status --json --project-name <project-name>` still reports `product-not-enabled`.
 - If the order is not found, `purchase order wait` retries every 2 seconds.
 - If the order is still not found after 5 attempts, report order creation failure.
 - If the command returns any non-retryable error, do not keep retrying; show the error to the user.

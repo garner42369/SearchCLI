@@ -331,6 +331,7 @@ async function executeItemProvision(options: ItemProvisionCommandOptions): Promi
     region: options.region,
     timeoutMs: options.timeoutMs
   });
+  const projectName = options.projectName ?? config.projectName;
   const openapi = new VikingOpenApiClient(config);
   const runtime = new VikingRuntimeApiClient(config);
 
@@ -371,7 +372,7 @@ async function executeItemProvision(options: ItemProvisionCommandOptions): Promi
     Type: plan.defaults.datasetType === 'video' ? 3 : 1,
     Schema: schema,
     DataFieldConfig: fieldConfig,
-    ProjectName: options.projectName
+    ProjectName: projectName
   });
   const schemaCheckResponse = await openapi.post('/api/v1/CheckDatasetSchema', schemaCheckPayload);
   steps.push({ step: 'schema_check', ok: true, response: schemaCheckResponse });
@@ -383,7 +384,8 @@ async function executeItemProvision(options: ItemProvisionCommandOptions): Promi
       Name: options.datasetName ?? asOptionalString(datasetCreateArtifact.Name) ?? plan.names.dataset,
       Type: plan.defaults.datasetType === 'video' ? 3 : 1,
       Schema: schema,
-      DataFieldConfig: fieldConfig
+      DataFieldConfig: fieldConfig,
+      ProjectName: projectName
     });
     validateFieldDescriptionsForApply(datasetCreatePayload);
     const datasetCreateResponse = await openapi.post('/api/v1/CreateDataset', datasetCreatePayload);
@@ -444,7 +446,7 @@ async function executeItemProvision(options: ItemProvisionCommandOptions): Promi
       ...appCreateArtifact,
       Name: options.applicationName ?? asOptionalString(appCreateArtifact.Name) ?? plan.names.application,
       Industry: plan.defaults.datasetType === 'video' ? 3 : 1,
-      ProjectName: options.projectName
+      ProjectName: projectName
     });
     const appCreateResponse = await openapi.post('/api/v1/CreateApplication', appCreatePayload);
     applicationId = extractStringField(appCreateResponse, ['AppID', 'AppId', 'ApplicationId']);
@@ -463,7 +465,7 @@ async function executeItemProvision(options: ItemProvisionCommandOptions): Promi
       DatasetIDs: [datasetId],
       DataConfig: bindingFieldConfig,
       OnlySave: false,
-      ProjectName: options.projectName
+      ProjectName: projectName
     })
   );
   steps.push({ step: 'bind_dataset', ok: true, response: bindResponse });
@@ -473,7 +475,7 @@ async function executeItemProvision(options: ItemProvisionCommandOptions): Promi
     compactObject({
       AppID: applicationId,
       DatasetID: datasetId,
-      ProjectName: options.projectName
+      ProjectName: projectName
     })
   );
   steps.push({
@@ -489,7 +491,7 @@ async function executeItemProvision(options: ItemProvisionCommandOptions): Promi
       compactObject({
         AppID: applicationId,
         Config: onlineConfig,
-        ProjectName: options.projectName
+        ProjectName: projectName
       })
     );
     steps.push({ step: 'update_online_config', ok: true, response: onlineConfigResponse });
@@ -497,7 +499,7 @@ async function executeItemProvision(options: ItemProvisionCommandOptions): Promi
       '/api/v1/GetAppOnlineConfig',
       compactObject({
         AppID: applicationId,
-        ProjectName: options.projectName
+        ProjectName: projectName
       })
     );
     steps.push({
@@ -517,7 +519,7 @@ async function executeItemProvision(options: ItemProvisionCommandOptions): Promi
 
   let status = await fetchAppStatusSnapshot(config, {
     applicationId,
-    projectName: options.projectName
+    projectName
   });
   steps.push({
     step: 'wait_ready',
@@ -618,6 +620,7 @@ async function executeItemVerify(options: ItemVerifyCommandOptions): Promise<Rec
     region: options.region,
     timeoutMs: options.timeoutMs
   });
+  const projectName = options.projectName ?? config.projectName;
   const openapi = new VikingOpenApiClient(config);
   const runtime = new VikingRuntimeApiClient(config);
   const steps: StepResult[] = [];
@@ -629,7 +632,7 @@ async function executeItemVerify(options: ItemVerifyCommandOptions): Promise<Rec
           runtime,
           applicationId,
           datasetId,
-          projectName: options.projectName,
+          projectName,
           expectedRecordCount,
           samplePrimaryKey: readSamplePrimaryKey(plan.inferred.primaryKeyField, normalizedItems),
           probeQuery: options.searchQuery ?? plan.defaults.searchQuery
@@ -639,7 +642,7 @@ async function executeItemVerify(options: ItemVerifyCommandOptions): Promise<Rec
           runtime,
           applicationId,
           datasetId,
-          projectName: options.projectName,
+          projectName,
           expectedRecordCount,
           samplePrimaryKey: readSamplePrimaryKey(plan.inferred.primaryKeyField, normalizedItems),
           probeQuery: options.searchQuery ?? plan.defaults.searchQuery,
@@ -675,7 +678,7 @@ async function executeItemVerify(options: ItemVerifyCommandOptions): Promise<Rec
         '/api/v1/CreateSearchScene',
         compactObject({
           AppID: applicationId,
-          ProjectName: options.projectName,
+          ProjectName: projectName,
           Name: searchSceneName,
           Description: searchSceneDescription
         })
@@ -707,7 +710,7 @@ async function executeItemVerify(options: ItemVerifyCommandOptions): Promise<Rec
         Name: asOptionalString(searchSceneUpdateArtifact.Name) ?? searchSceneName,
         Description: asOptionalString(searchSceneUpdateArtifact.Description) ?? searchSceneDescription,
         Config: isRecord(searchSceneUpdateArtifact.Config) ? searchSceneUpdateArtifact.Config : undefined,
-        ProjectName: options.projectName
+        ProjectName: projectName
       })
     );
     steps.push({
@@ -721,7 +724,7 @@ async function executeItemVerify(options: ItemVerifyCommandOptions): Promise<Rec
       compactObject({
         AppID: applicationId,
         SceneID: searchSceneId,
-        ProjectName: options.projectName
+        ProjectName: projectName
       })
     );
     steps.push({
@@ -778,7 +781,7 @@ async function executeItemVerify(options: ItemVerifyCommandOptions): Promise<Rec
       compactObject({
         AppID: applicationId,
         Config: mergedChatConfig,
-        ProjectName: options.projectName
+        ProjectName: projectName
       })
     ).catch(error => {
       console.warn('UpsertAppOnlineConfig failed for ChatConfig, this might be expected for some datasets.');
@@ -794,7 +797,7 @@ async function executeItemVerify(options: ItemVerifyCommandOptions): Promise<Rec
       '/api/v1/GetAppOnlineConfig',
       compactObject({
         AppID: applicationId,
-        ProjectName: options.projectName
+        ProjectName: projectName
       })
     );
     steps.push({
@@ -846,7 +849,7 @@ async function executeItemVerify(options: ItemVerifyCommandOptions): Promise<Rec
     }
     const recommendCreatePayload = compactObject({
       AppID: applicationId,
-      ProjectName: options.projectName,
+      ProjectName: projectName,
       Type: recommendSceneType,
       Name: recommendSceneName,
       Description: recommendSceneDescription,
@@ -876,7 +879,7 @@ async function executeItemVerify(options: ItemVerifyCommandOptions): Promise<Rec
       ItemDatasetID: datasetId,
       BhvSceneTypes: recommendBhvSceneTypes,
       Config: isRecord(recommendSceneUpdateArtifact.Config) ? recommendSceneUpdateArtifact.Config : undefined,
-      ProjectName: options.projectName
+      ProjectName: projectName
     });
     const recommendSceneUpdateResponse = await openapi.post('/api/v1/OnlineRecommendScene', recommendOnlinePayload);
     steps.push({
@@ -890,7 +893,7 @@ async function executeItemVerify(options: ItemVerifyCommandOptions): Promise<Rec
       compactObject({
         AppID: applicationId,
         SceneID: recommendSceneId,
-        ProjectName: options.projectName
+        ProjectName: projectName
       })
     );
     steps.push({
@@ -1051,14 +1054,15 @@ async function inspectIndexingReadiness(input: {
   probeQuery?: string;
 }): Promise<IndexingObservation> {
   const openapi = new VikingOpenApiClient(input.config);
+  const projectName = input.projectName ?? input.config.projectName;
   const [appStatus, datasetResponse] = await Promise.all([
     fetchAppStatusSnapshot(input.config, {
       applicationId: input.applicationId,
-      projectName: input.projectName
+      projectName
     }),
     openapi.post('/api/v1/GetDataset', compactObject({
       DatasetID: input.datasetId,
-      ProjectName: input.projectName
+      ProjectName: projectName
     }))
   ]);
   const datasetRecord = unwrapResultEnvelope(datasetResponse);

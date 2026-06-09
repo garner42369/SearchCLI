@@ -56,6 +56,7 @@ import { promptText, toInteger, printResult, isRecord } from './product-commands
 
 export async function runAppDatasetBindWorkflowCommand(options: AppDatasetBindWorkflowOptions): Promise<void> {
   const config = resolveServiceConfig(toServiceConfigInput(options));
+  const projectName = options.projectName ?? config.projectName;
   const client = new VikingOpenApiClient(config);
   const steps: WorkflowStepResult[] = [];
 
@@ -63,7 +64,7 @@ export async function runAppDatasetBindWorkflowCommand(options: AppDatasetBindWo
 
   const datasetRes = await client.post('/api/v1/GetDataset', compactObject({
     DatasetID: options.datasetId,
-    ProjectName: options.projectName
+    ProjectName: projectName
   }));
 
   const datasetResult = isRecord(datasetRes) && isRecord((datasetRes as any).Result) ? (datasetRes as any).Result : undefined;
@@ -150,7 +151,7 @@ export async function runAppDatasetBindWorkflowCommand(options: AppDatasetBindWo
   const bindPayload = compactObject({
     AppID: options.applicationId,
     DatasetIDs: [options.datasetId],
-    ProjectName: options.projectName,
+    ProjectName: projectName,
     BacktrackReq: backtrackReq,
     DataConfig: bindingConfig.dataConfig,
     SchemaVersion: options.schemaVersion,
@@ -181,7 +182,7 @@ export async function runAppDatasetBindWorkflowCommand(options: AppDatasetBindWo
     const onlineConfigPayload = compactObject({
       AppID: options.applicationId,
       Config: await loadJsonInput(options.onlineConfig),
-      ProjectName: options.projectName
+      ProjectName: projectName
     });
     const onlineConfigResponse = await client.post(onlineConfigAction.path, onlineConfigPayload);
     steps.push({
@@ -201,14 +202,14 @@ export async function runAppDatasetBindWorkflowCommand(options: AppDatasetBindWo
   const snapshot = options.waitReady
     ? await waitForAppReady(config, {
         applicationId: options.applicationId,
-        projectName: options.projectName,
+        projectName,
         activatedOnly: options.activatedOnly,
         waitTimeoutMs: options.waitTimeoutMs,
         pollIntervalMs: options.pollIntervalMs
       })
     : await fetchAppStatusSnapshot(config, {
         applicationId: options.applicationId,
-        projectName: options.projectName,
+        projectName,
         activatedOnly: options.activatedOnly
       });
 
@@ -246,9 +247,10 @@ export async function runAppDatasetBindWorkflowCommand(options: AppDatasetBindWo
 }
 
 export async function runAppDiagnoseWorkflowCommand(options: AppDiagnoseWorkflowOptions): Promise<void> {
-  const snapshot = await fetchAppStatusSnapshot(resolveServiceConfig(toServiceConfigInput(options)), {
+  const config = resolveServiceConfig(toServiceConfigInput(options));
+  const snapshot = await fetchAppStatusSnapshot(config, {
     applicationId: options.applicationId,
-    projectName: options.projectName,
+    projectName: options.projectName ?? config.projectName,
     activatedOnly: options.activatedOnly
   });
 

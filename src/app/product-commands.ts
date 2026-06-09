@@ -3159,7 +3159,7 @@ function toProjectScopedOptions(values: StandaloneValues): ProjectScopedOptions 
 
 async function callOpenApi(pathname: string, payload: unknown, options: ServiceCommandOptions): Promise<unknown> {
   const config = resolveServiceConfig(toServiceConfigInput(options));
-  return new VikingOpenApiClient(config).post(pathname, payload);
+  return new VikingOpenApiClient(config).post(pathname, withProjectName(payload, config.projectName));
 }
 
 async function callConsoleTopAction(action: string, payload: unknown, options: ServiceCommandOptions): Promise<unknown> {
@@ -3712,6 +3712,20 @@ function summarizeDatasetEntry(entry: Record<string, unknown>): Record<string, u
 
 function compactObject<T extends Record<string, unknown>>(value: T): T {
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
+}
+
+function withProjectName(payload: unknown, projectName: string): unknown {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return payload;
+  }
+  const currentProjectName = (payload as Record<string, unknown>).ProjectName;
+  if (typeof currentProjectName === 'string' && currentProjectName.trim().length > 0) {
+    return payload;
+  }
+  return {
+    ...(payload as Record<string, unknown>),
+    ProjectName: projectName
+  };
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

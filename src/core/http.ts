@@ -214,11 +214,10 @@ function withDefaultProjectName(payload: unknown, projectName: string): unknown 
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return payload;
   }
-
-  if ('ProjectName' in (payload as Record<string, unknown>)) {
+  const currentProjectName = (payload as Record<string, unknown>).ProjectName;
+  if (typeof currentProjectName === 'string' && currentProjectName.trim().length > 0) {
     return payload;
   }
-
   return {
     ...(payload as Record<string, unknown>),
     ProjectName: projectName

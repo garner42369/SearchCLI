@@ -54,6 +54,11 @@ export interface AuthStatusOptions extends PlatformServiceOptions {
   profile?: string;
 }
 
+export interface DoctorOptions extends PlatformServiceOptions {
+  credentialStore?: CredentialStoreMode;
+  profile?: string;
+}
+
 type AuthFailureReason = 'unconfigured' | 'invalid' | 'product-not-enabled' | 'network-error';
 
 type AuthStatusClassification =
@@ -123,6 +128,7 @@ export async function runAuthLoginCommand(options: AuthLoginOptions): Promise<vo
     credentialStore: options.credentialStore,
     activeProfile: options.profile
   });
+  const projectName = defaults.projectName;
   const selectedProfile = resolveActiveCliProfile(existingConfig, options.profile ?? defaults.activeProfile);
   const interactive = !options.noPrompt && Boolean(process.stdin.isTTY && process.stdout.isTTY);
   const accessKeyId = options.accessKeyId ?? process.env.VIKING_AK ?? (interactive ? await promptText('Viking Access Key ID: ') : undefined);
@@ -147,7 +153,7 @@ export async function runAuthLoginCommand(options: AuthLoginOptions): Promise<vo
     baseUrl: options.baseUrl,
     controlPlaneBaseUrl: options.controlPlaneBaseUrl,
     dataPlaneBaseUrl: options.dataPlaneBaseUrl,
-    projectName: options.projectName,
+    projectName,
     region: options.region,
     timeoutMs: options.timeoutMs,
     credentialStore: options.credentialStore
@@ -194,6 +200,7 @@ export async function runAuthImportEnvCommand(options: AuthImportEnvOptions): Pr
     credentialStore: options.credentialStore,
     activeProfile: options.profile
   });
+  const projectName = defaults.projectName;
   const selectedProfile = resolveActiveCliProfile(existingConfig, options.profile ?? defaults.activeProfile);
   const persisted = await persistAuthCredentials({
     existingConfig,
@@ -204,7 +211,7 @@ export async function runAuthImportEnvCommand(options: AuthImportEnvOptions): Pr
     baseUrl: options.baseUrl,
     controlPlaneBaseUrl: options.controlPlaneBaseUrl,
     dataPlaneBaseUrl: options.dataPlaneBaseUrl,
-    projectName: options.projectName,
+    projectName,
     region: options.region,
     timeoutMs: options.timeoutMs,
     credentialStore: options.credentialStore
@@ -704,10 +711,21 @@ export async function runAuthListCommand(): Promise<void> {
   });
 }
 
-export async function runDoctorCommand(): Promise<void> {
+export async function runDoctorCommand(options: DoctorOptions = {}): Promise<void> {
   const config = await loadCliConfig();
-  const resolved = resolveCliDefaults();
-  const credentialStatus = getCredentialStoreStatus(resolved.credentialStore);
+  const resolved = resolveCliDefaults({
+    baseUrl: options.baseUrl,
+    controlPlaneBaseUrl: options.controlPlaneBaseUrl,
+    dataPlaneBaseUrl: options.dataPlaneBaseUrl,
+    accessKeyId: options.accessKeyId,
+    secretKey: options.secretKey,
+    projectName: options.projectName,
+    region: options.region,
+    timeoutMs: options.timeoutMs,
+    credentialStore: options.credentialStore,
+    activeProfile: options.profile
+  });
+  const credentialStatus = getCredentialStoreStatus(resolved.credentialStore, resolved.activeProfile);
   const llmConfigured = Boolean(
     resolved.llmBaseUrl &&
     resolved.llmModel &&
@@ -841,7 +859,7 @@ function printDomainHelp(domain: string): void {
       ]
     ),
     doctor: `USAGE
-  vs doctor [--format <format>] [--jq <selector>] [--output <path>]`
+  vs doctor [--project-name <name>] [--region <region>] [--base-url <url>] [--control-plane-base-url <url>] [--data-plane-base-url <url>] [--ak <id>] [--sk <secret>] [--timeout-ms <ms>] [--profile <name>] [--store auto|keychain|file|ephemeral] [--format <format>] [--jq <selector>] [--output <path>]`
   };
 
   console.log(helpByDomain[domain] ?? `Unknown domain: ${domain}`);
@@ -922,7 +940,7 @@ async function runDoctorCli(argv: string[]): Promise<void> {
     printDomainHelp('doctor');
     return;
   }
-  await runDoctorCommand();
+  await runDoctorCommand(parseStandaloneAuthOptions(argv));
 }
 function parseStandaloneAuthOptions(argv: string[]): AuthLoginOptions & { positionals: string[] } {
   const { values, positionals } = parseArgs({
