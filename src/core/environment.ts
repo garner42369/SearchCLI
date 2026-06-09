@@ -14,9 +14,9 @@ export interface EnvironmentEndpoints {
   purchasePageUrl: string;
 }
 
-export const VOLCANO_PURCHASE_PAGE_DEV_URL = 'https://console.volcengine.com/common-buy/AISearch-DevTest%7C%7C7291580783171539244?ProjectName=default';
-export const VOLCANO_PURCHASE_PAGE_PROD_URL = 'https://console.volcengine.com/auth/login?_vtm_=0.0.c67268.d65110.0&redirectURI=%2Fcommon-buy%2FREC-SaaS-LLM-SEARCH%7C%7C7291580783171539244&scenario=viking_ai_search'
-const VOLCANO_PURCHASE_PAGE_URL = VOLCANO_PURCHASE_PAGE_PROD_URL;
+export const VOLCANO_PURCHASE_CN_BEIJING_DEV_URL = 'https://console.volcengine.com/common-buy/AISearch-DevTest%7C%7C7291580783171539244?ProjectName=default';
+export const VOLCANO_PURCHASE_CN_BEIJING_PROD_URL = 'https://console.volcengine.com/common-buy/REC-SaaS-LLM-SEARCH%7C%7C7291580783171539244'
+const VOLCANO_PURCHASE_CN_BEIJING_PAGE_URL = VOLCANO_PURCHASE_CN_BEIJING_PROD_URL;
 
 const ENVIRONMENT_REGISTRY: readonly EnvironmentEndpoints[] = [
   {
@@ -24,21 +24,21 @@ const ENVIRONMENT_REGISTRY: readonly EnvironmentEndpoints[] = [
     region: 'cn-beijing',
     controlPlaneBaseUrl: 'https://aisearch.cn-beijing.volcengineapi.com',
     dataPlaneBaseUrl: 'https://aisearch.cn-beijing.volces.com',
-    purchasePageUrl: VOLCANO_PURCHASE_PAGE_URL
+    purchasePageUrl: VOLCANO_PURCHASE_CN_BEIJING_PAGE_URL
   },
   {
     envId: 'volcano-ap-southeast-1',
     region: 'ap-southeast-1',
     controlPlaneBaseUrl: 'https://aisearch.ap-southeast-1.volcengineapi.com',
     dataPlaneBaseUrl: 'https://aisearch.ap-southeast-1.volces.com',
-    purchasePageUrl: VOLCANO_PURCHASE_PAGE_URL // TODO dyx: confirm the purchase page url
+    purchasePageUrl: 'https://console.volcengine.com/common-buy/REC-SaaS-LLM-SEARCH%7C%7C7406000721643196716'
   },
   {
     envId: 'byteplus-ap-southeast-1',
     region: 'ap-southeast-1',
     controlPlaneBaseUrl: 'https://aisearch.ap-southeast-1.byteplusapi.com',
     dataPlaneBaseUrl: 'https://aisearch.ap-southeast-1.bytepluses.com',
-    purchasePageUrl: VOLCANO_PURCHASE_PAGE_URL // TODO dyx: confirm the purchase page url
+    purchasePageUrl: 'https://console.byteplus.com/common-buy/REC-SaaS-LLM-SEARCH%7C%7C7291575107170881836'
   }
 ];
 
