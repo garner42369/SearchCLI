@@ -16,6 +16,7 @@
     "README.ko_KR.md",
     "README.fr_FR.md",
     "README.ru_RU.md",
+    "README.it_IT.md",
     "package.json"
   ],
   "engines": {
