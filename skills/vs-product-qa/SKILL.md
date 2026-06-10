@@ -26,7 +26,7 @@ Typical trigger questions include:
 
 Do not use this skill when the user is asking to execute a specialized workflow:
 
-- sign-up, purchase, payment, or first AK/SK setup -> delegate to `vs-onboarding-purchase`
+- sign-up, purchase, payment, or first AK/SK setup -> delegate to `vs-user-onboarding`
 - item data ingestion or dataset creation -> delegate to `vs-item-onboarding`
 - search tuning suggestions or search tuning execution -> delegate to `vs-search-tuning`
 
@@ -191,7 +191,7 @@ User: "What is a scene in Viking AI Search?"
 
 User: "How do I buy Viking AI Search and create my first AK/SK?"
 
-Answer: "This is covered by `vs-onboarding-purchase` because it is a sign-up, purchase, and first AK/SK workflow. Handing off."
+Answer: "This is covered by `vs-user-onboarding` because it is a sign-up, purchase, and first AK/SK workflow. Handing off."
 
 ## References
 

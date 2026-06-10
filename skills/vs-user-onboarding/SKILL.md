@@ -1,6 +1,6 @@
 ---
-name: vs-onboarding-purchase
-title: vs-onboarding-purchase
+name: vs-user-onboarding
+title: vs-user-onboarding
 description: "Guide a brand-new SearchCLI/vs user from first-time usage questions to sign-up, purchase of Viking AI Search, AK/SK setup, and a working authenticated CLI. Use when the user says they downloaded or installed SearchCLI/vs and asks how to use it, how to start, sign up, buy, or onboard."
 category: workflow
 applies_to: codex, agents, external-agent
@@ -9,7 +9,7 @@ keywords: onboarding, sign up, signup, register, purchase, buy, real-name, real 
 commands: auth status, auth login, auth import-env, doctor, skill list, skill show, purchase link, purchase order status, purchase order wait
 ---
 
-# vs-onboarding-purchase
+# vs-user-onboarding
 
 # AI Search New User Purchase Onboarding
 
@@ -45,7 +45,7 @@ The CLI missing-auth recovery message is:
 ```text
 You are not authenticated. To get started:
 - If you already have AK/SK: run `vs auth login` or `vs auth import-env`.
-- If you are new to Viking AI Search: run `vs skill show vs-onboarding-purchase`.
+- If you are new to Viking AI Search: run `vs skill show vs-user-onboarding`.
 ```
 
 Recovery routing:

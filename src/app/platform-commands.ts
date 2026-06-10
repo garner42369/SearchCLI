@@ -639,12 +639,12 @@ function recoveryForAuthStatus(reason: AuthFailureReason | null): string[] {
     case 'unconfigured':
       return [
         'If you already have AK/SK, run `vs auth login` or set VIKING_AK/VIKING_SK and run `vs auth import-env`.',
-        'If you are new to Viking AI Search, run `vs skill show vs-onboarding-purchase`.'
+        'If you are new to Viking AI Search, run `vs skill show vs-user-onboarding`.'
       ];
     case 'invalid':
       return ['Check whether the AK/SK is expired, deleted, mistyped, or belongs to the selected region, then rerun `vs auth login` or `vs auth import-env`.'];
     case 'product-not-enabled':
-      return ['The credentials appear usable, but Viking AI Search may not be enabled for this account. Run `vs skill show vs-onboarding-purchase` for purchase onboarding.'];
+      return ['The credentials appear usable, but Viking AI Search may not be enabled for this account. Run `vs skill show vs-user-onboarding` for purchase onboarding.'];
     case 'network-error':
       return ['Check network connectivity, proxy, DNS, and endpoint configuration, then rerun `vs auth status --json`.'];
   }
