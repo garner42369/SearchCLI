@@ -5,9 +5,10 @@ import { spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { parseArgs } from 'node:util';
 import { hasHelpFlag, isDomainHelpRequest, renderUsageBlock } from '../core/help-utils';
-import { VikingOpenApiClient } from '../core/openapi-client';
+import { ApiRequestError } from '../core/http';
 import { printOutput } from '../core/output-format';
-import { resolveServiceConfig, type ServiceConfigInput } from '../core/service-config';
+import type { ServiceConfigInput } from '../core/service-config';
+import { runPurchaseOrderStatusCommand } from './product-commands';
 import {
   deleteLlmApiCredentialsSync,
   deleteServiceCredentialsSync,
@@ -52,6 +53,27 @@ export interface AuthStatusOptions extends PlatformServiceOptions {
   credentialStore?: CredentialStoreMode;
   profile?: string;
 }
+
+export interface DoctorOptions extends PlatformServiceOptions {
+  credentialStore?: CredentialStoreMode;
+  profile?: string;
+}
+
+type AuthFailureReason = 'unconfigured' | 'invalid' | 'product-not-enabled' | 'network-error';
+
+type AuthStatusClassification =
+  | {
+      status: 'ok';
+      reason: null;
+      reasonDetail: null;
+      serviceProbe: { ok: true; detail: string };
+    }
+  | {
+      status: 'failed';
+      reason: AuthFailureReason;
+      reasonDetail: string;
+      serviceProbe: { ok: false; detail: string } | null;
+    };
 
 export interface AuthImportEnvOptions extends PlatformServiceOptions {
   credentialStore?: CredentialStoreMode;
@@ -106,6 +128,7 @@ export async function runAuthLoginCommand(options: AuthLoginOptions): Promise<vo
     credentialStore: options.credentialStore,
     activeProfile: options.profile
   });
+  const projectName = defaults.projectName;
   const selectedProfile = resolveActiveCliProfile(existingConfig, options.profile ?? defaults.activeProfile);
   const interactive = !options.noPrompt && Boolean(process.stdin.isTTY && process.stdout.isTTY);
   const accessKeyId = options.accessKeyId ?? process.env.VIKING_AK ?? (interactive ? await promptText('Viking Access Key ID: ') : undefined);
@@ -130,7 +153,7 @@ export async function runAuthLoginCommand(options: AuthLoginOptions): Promise<vo
     baseUrl: options.baseUrl,
     controlPlaneBaseUrl: options.controlPlaneBaseUrl,
     dataPlaneBaseUrl: options.dataPlaneBaseUrl,
-    projectName: options.projectName,
+    projectName,
     region: options.region,
     timeoutMs: options.timeoutMs,
     credentialStore: options.credentialStore
@@ -177,6 +200,7 @@ export async function runAuthImportEnvCommand(options: AuthImportEnvOptions): Pr
     credentialStore: options.credentialStore,
     activeProfile: options.profile
   });
+  const projectName = defaults.projectName;
   const selectedProfile = resolveActiveCliProfile(existingConfig, options.profile ?? defaults.activeProfile);
   const persisted = await persistAuthCredentials({
     existingConfig,
@@ -187,7 +211,7 @@ export async function runAuthImportEnvCommand(options: AuthImportEnvOptions): Pr
     baseUrl: options.baseUrl,
     controlPlaneBaseUrl: options.controlPlaneBaseUrl,
     dataPlaneBaseUrl: options.dataPlaneBaseUrl,
-    projectName: options.projectName,
+    projectName,
     region: options.region,
     timeoutMs: options.timeoutMs,
     credentialStore: options.credentialStore
@@ -406,6 +430,8 @@ export async function runAuthStatusCommand(options: AuthStatusOptions = {}): Pro
   const currentConfig = await loadCliConfig();
   const defaults = resolveCliDefaults({
     baseUrl: options.baseUrl,
+    controlPlaneBaseUrl: options.controlPlaneBaseUrl,
+    dataPlaneBaseUrl: options.dataPlaneBaseUrl,
     accessKeyId: options.accessKeyId,
     secretKey: options.secretKey,
     projectName: options.projectName,
@@ -422,9 +448,15 @@ export async function runAuthStatusCommand(options: AuthStatusOptions = {}): Pro
     secureStoreError = error instanceof Error ? error.message : String(error);
   }
   const status = getCredentialStoreStatus(defaults.credentialStore, defaults.activeProfile);
+  const authClassification = await classifyAuthStatus(defaults);
 
   await printJson({
-    loggedIn: Boolean(defaults.accessKeyId && defaults.secretKey),
+    loggedIn: authClassification.status === 'ok',
+    status: authClassification.status,
+    reason: authClassification.reason,
+    reasonDetail: authClassification.reasonDetail,
+    serviceProbe: authClassification.serviceProbe,
+    recovery: recoveryForAuthStatus(authClassification.reason),
     activeProfile: defaults.activeProfile,
     source: defaults.authSource,
     accessKeyId: defaults.accessKeyId ? maskCredential(defaults.accessKeyId) : null,
@@ -460,6 +492,162 @@ export async function runAuthStatusCommand(options: AuthStatusOptions = {}): Pro
       credentialStore: entry.config.credentialStore ?? currentConfig.credentialStore ?? 'auto'
     }))
   });
+}
+
+async function classifyAuthStatus(defaults: ResolvedCliDefaults): Promise<AuthStatusClassification> {
+  if (!defaults.accessKeyId || !defaults.secretKey) {
+    return {
+      status: 'failed',
+      reason: 'unconfigured',
+      reasonDetail: 'No AK/SK is configured for the active profile.',
+      serviceProbe: null
+    };
+  }
+
+  try {
+    await runPurchaseOrderStatusCommand({
+      controlPlaneBaseUrl: defaults.controlPlaneBaseUrl,
+      dataPlaneBaseUrl: defaults.dataPlaneBaseUrl,
+      accessKeyId: defaults.accessKeyId,
+      secretKey: defaults.secretKey,
+      projectName: defaults.projectName,
+      region: defaults.region,
+      timeoutMs: Math.min(defaults.timeoutMs, 5000),
+      suppressOutput: true
+    });
+    return {
+      status: 'ok',
+      reason: null,
+      reasonDetail: null,
+      serviceProbe: { ok: true, detail: `GetBillingOrder succeeded (project=${defaults.projectName})` }
+    };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message.split('\n')[0] : String(error);
+    return {
+      status: 'failed',
+      reason: classifyAuthProbeFailure(error),
+      reasonDetail: detail,
+      serviceProbe: { ok: false, detail }
+    };
+  }
+}
+
+function classifyAuthProbeFailure(error: unknown): AuthFailureReason {
+  if (isNetworkProbeError(error)) {
+    return 'network-error';
+  }
+
+  if (error instanceof ApiRequestError) {
+    return classifyConsoleApiError(error);
+  }
+
+  const message = error instanceof Error ? `${error.name} ${error.message}` : String(error);
+  const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes('invalidaccesskey') ||
+    normalized.includes('signature') ||
+    normalized.includes('authfailure') ||
+    normalized.includes('unauthorized') ||
+    normalized.includes('request failed: 401')
+  ) {
+    return 'invalid';
+  }
+
+  if (
+    normalized.includes('product-not-enabled') ||
+    normalized.includes('product not enabled') ||
+    normalized.includes('not enabled') ||
+    normalized.includes('not open') ||
+    normalized.includes('not activated') ||
+    normalized.includes('not purchased') ||
+    normalized.includes('not subscribed') ||
+    normalized.includes('nopermission') ||
+    normalized.includes('no permission') ||
+    normalized.includes('forbidden') ||
+    normalized.includes('request failed: 403')
+  ) {
+    return 'product-not-enabled';
+  }
+
+  return 'invalid';
+}
+
+function classifyConsoleApiError(error: ApiRequestError): AuthFailureReason {
+  const code = error.apiCode?.toLowerCase();
+
+  if (error.statusCode === 401 || (code && AUTH_INVALID_API_CODES.has(code))) {
+    return 'invalid';
+  }
+
+  if (code && PRODUCT_NOT_ENABLED_API_CODES.has(code)) {
+    return 'product-not-enabled';
+  }
+
+  if (error.statusCode === 403) {
+    return 'product-not-enabled';
+  }
+
+  return 'invalid';
+}
+
+function isNetworkProbeError(error: unknown): boolean {
+  if (error instanceof ApiRequestError) return false;
+  const message = error instanceof Error ? `${error.name} ${error.message}` : String(error);
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes('aborterror') ||
+    normalized.includes('timeout') ||
+    normalized.includes('network') ||
+    normalized.includes('fetch failed') ||
+    normalized.includes('econnreset') ||
+    normalized.includes('econnrefused') ||
+    normalized.includes('etimedout') ||
+    normalized.includes('enotfound') ||
+    normalized.includes('eai_again')
+  );
+}
+
+const AUTH_INVALID_API_CODES = new Set([
+  'authfailure',
+  'authfailure.signaturemismatch',
+  'authfailure.signaturemismatched',
+  'authfailure.invalidaccesskey',
+  'authfailure.invalidaccesskeyid',
+  'authfailure.missingauthenticationtoken',
+  'invalidaccesskey',
+  'invalidaccesskeyid',
+  'invalidsecretkey',
+  'signaturedoesnotmatch',
+  'signaturemismatch',
+  'unauthorized'
+]);
+
+const PRODUCT_NOT_ENABLED_API_CODES = new Set([
+  // Returned by GetBillingOrder or account/billing state checks when the product instance is missing or inaccessible.
+  'accessdenied',
+  'resourcenotfound.instance',
+  'resourcenotfound.prepostinstance',
+  // Returned by CheckAccountAndBillingStateMiddleware when account or billing state is not enabled.
+  'operationdenied.statenotenable'
+]);
+
+function recoveryForAuthStatus(reason: AuthFailureReason | null): string[] {
+  switch (reason) {
+    case null:
+      return ['Run `vs doctor --json` for a full local readiness check.'];
+    case 'unconfigured':
+      return [
+        'If you already have AK/SK, run `vs auth login` or set VIKING_AK/VIKING_SK and run `vs auth import-env`.',
+        'If you are new to Viking AI Search, run `vs skill show vs-user-onboarding`.'
+      ];
+    case 'invalid':
+      return ['Check whether the AK/SK is expired, deleted, mistyped, or belongs to the selected region, then rerun `vs auth login` or `vs auth import-env`.'];
+    case 'product-not-enabled':
+      return ['The credentials appear usable, but Viking AI Search may not be enabled for this account. Run `vs skill show vs-user-onboarding` for purchase onboarding.'];
+    case 'network-error':
+      return ['Check network connectivity, proxy, DNS, and endpoint configuration, then rerun `vs auth status --json`.'];
+  }
 }
 
 export async function runAuthLogoutCommand(options: AuthLogoutOptions = {}): Promise<void> {
@@ -523,10 +711,21 @@ export async function runAuthListCommand(): Promise<void> {
   });
 }
 
-export async function runDoctorCommand(): Promise<void> {
+export async function runDoctorCommand(options: DoctorOptions = {}): Promise<void> {
   const config = await loadCliConfig();
-  const resolved = resolveCliDefaults();
-  const credentialStatus = getCredentialStoreStatus(resolved.credentialStore);
+  const resolved = resolveCliDefaults({
+    baseUrl: options.baseUrl,
+    controlPlaneBaseUrl: options.controlPlaneBaseUrl,
+    dataPlaneBaseUrl: options.dataPlaneBaseUrl,
+    accessKeyId: options.accessKeyId,
+    secretKey: options.secretKey,
+    projectName: options.projectName,
+    region: options.region,
+    timeoutMs: options.timeoutMs,
+    credentialStore: options.credentialStore,
+    activeProfile: options.profile
+  });
+  const credentialStatus = getCredentialStoreStatus(resolved.credentialStore, resolved.activeProfile);
   const llmConfigured = Boolean(
     resolved.llmBaseUrl &&
     resolved.llmModel &&
@@ -566,16 +765,17 @@ export async function runDoctorCommand(): Promise<void> {
   let auth: { ok: boolean; detail: string } | undefined;
   if (resolved.accessKeyId && resolved.secretKey) {
     try {
-      const serviceConfig = resolveServiceConfig({
+      await runPurchaseOrderStatusCommand({
         controlPlaneBaseUrl: resolved.controlPlaneBaseUrl,
         dataPlaneBaseUrl: resolved.dataPlaneBaseUrl,
         accessKeyId: resolved.accessKeyId,
         secretKey: resolved.secretKey,
+        projectName: resolved.projectName,
         region: resolved.region,
-        timeoutMs: Math.min(resolved.timeoutMs, 5000)
+        timeoutMs: Math.min(resolved.timeoutMs, 5000),
+        suppressOutput: true
       });
-      await runServiceAuthProbe(serviceConfig);
-      auth = { ok: true, detail: `GetUserConsoleConfig succeeded (project=${DEFAULT_PROJECT_NAME})` };
+      auth = { ok: true, detail: `GetBillingOrder succeeded (project=${resolved.projectName})` };
     } catch (error) {
       auth = {
         ok: false,
@@ -610,14 +810,6 @@ export async function runDoctorCommand(): Promise<void> {
     configuredKeys: formatCliConfigEntries(config, false),
     checks,
     auth
-  });
-}
-
-const DEFAULT_PROJECT_NAME = 'default';
-
-async function runServiceAuthProbe(config: ReturnType<typeof resolveServiceConfig>): Promise<unknown> {
-  return new VikingOpenApiClient(config).post('/api/v1/GetUserConsoleConfig', {
-    ProjectName: DEFAULT_PROJECT_NAME
   });
 }
 
@@ -667,7 +859,7 @@ function printDomainHelp(domain: string): void {
       ]
     ),
     doctor: `USAGE
-  vs doctor [--format <format>] [--jq <selector>] [--output <path>]`
+  vs doctor [--project-name <name>] [--region <region>] [--base-url <url>] [--control-plane-base-url <url>] [--data-plane-base-url <url>] [--ak <id>] [--sk <secret>] [--timeout-ms <ms>] [--profile <name>] [--store auto|keychain|file|ephemeral] [--format <format>] [--jq <selector>] [--output <path>]`
   };
 
   console.log(helpByDomain[domain] ?? `Unknown domain: ${domain}`);
@@ -748,7 +940,7 @@ async function runDoctorCli(argv: string[]): Promise<void> {
     printDomainHelp('doctor');
     return;
   }
-  await runDoctorCommand();
+  await runDoctorCommand(parseStandaloneAuthOptions(argv));
 }
 function parseStandaloneAuthOptions(argv: string[]): AuthLoginOptions & { positionals: string[] } {
   const { values, positionals } = parseArgs({

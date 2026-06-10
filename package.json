@@ -1,6 +1,6 @@
 {
   "name": "viking-cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "CLI and installable skills for Viking AI Search",
   "bin": {
     "vs": "./bin/run.js"

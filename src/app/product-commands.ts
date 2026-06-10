@@ -8,7 +8,9 @@ import { parseArgs } from 'node:util';
 import { loadJsonInput, loadOptionalStringArray, parseBooleanString } from '../core/json-input';
 import { fetchAppStatusSnapshot, type AppStatusSnapshot } from '../core/app-status';
 import { getConsoleTopAction } from '../core/console-action-catalog';
+import { resolvePurchasePageUrl, type EnvironmentId } from '../core/environment';
 import { hasHelpFlag, isDomainHelpRequest, renderUsageBlock } from '../core/help-utils';
+import { ApiRequestError } from '../core/http';
 import { VikingOpenApiClient } from '../core/openapi-client';
 import { printOutput } from '../core/output-format';
 import { VikingRuntimeApiClient } from '../core/runtime-api-client';
@@ -461,6 +463,19 @@ export interface RecommendSuggestOptions extends ProjectScopedOptions {
   contextItemId?: string;
   items?: string;
   suggestConfig?: string;
+}
+
+export interface PurchaseOrderStatusOptions extends ProjectScopedOptions {
+  suppressOutput?: boolean;
+}
+
+export interface PurchaseOrderWaitOptions extends ProjectScopedOptions {
+  maxAttempts?: number;
+  pollIntervalMs?: number;
+}
+
+export interface PurchaseLinkOptions {
+  environmentId?: string;
 }
 
 export async function runAppCreateCommand(options: AppCreateOptions): Promise<void> {
@@ -1215,6 +1230,106 @@ export async function runChatSearchRunCommand(options: ChatSearchRunOptions): Pr
   await printResult(result);
 }
 
+export async function runPurchaseLinkCommand(options: PurchaseLinkOptions): Promise<void> {
+  const environmentId = parsePurchaseEnvironmentId(options.environmentId);
+  await printResult(resolvePurchasePageUrl(environmentId));
+}
+
+export async function runPurchaseOrderStatusCommand(options: PurchaseOrderStatusOptions): Promise<void> {
+  const result = await getBillingOrder(options);
+  assertBillingOrderHealthy(result);
+  if (!options.suppressOutput) {
+    await printResult({
+      ok: true,
+      orderFound: true,
+      response: result
+    });
+  }
+}
+
+export async function runPurchaseOrderWaitCommand(options: PurchaseOrderWaitOptions): Promise<void> {
+  const maxAttempts = ensurePositiveInt(options.maxAttempts ?? 5, '--max-attempts');
+  const pollIntervalMs = ensurePositiveInt(options.pollIntervalMs ?? 2000, '--poll-interval-ms');
+  let lastNotFoundMessage = '';
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const result = await getBillingOrder(options);
+      assertBillingOrderHealthy(result);
+      await printResult({
+        ok: true,
+        orderFound: true,
+        attempts: attempt,
+        response: result
+      });
+      return;
+    } catch (error) {
+      if (!isBillingOrderNotFoundError(error)) {
+        throw error;
+      }
+      lastNotFoundMessage = error instanceof Error ? error.message : String(error);
+      if (attempt < maxAttempts) {
+        process.stderr.write(
+          `[purchase:order-wait] order not found; retrying in ${pollIntervalMs}ms (${attempt}/${maxAttempts})\n`
+        );
+        await sleep(pollIntervalMs);
+      }
+    }
+  }
+
+  throw new Error(
+    `Billing order was not found after ${maxAttempts} attempts. Ask the user to confirm whether the purchase succeeded, then reopen the purchase page if needed.\n${lastNotFoundMessage}`
+  );
+}
+
+async function getBillingOrder(options: PurchaseOrderStatusOptions): Promise<unknown> {
+  const payload = (await loadJsonInput(options.data)) ?? compactObject({ ProjectName: options.projectName });
+  return callOpenApi('/api/v1/GetBillingOrder', payload, options);
+}
+
+function isBillingOrderNotFoundError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /\b404\b/.test(message) || /ResourceNotFound|NotFound|not found/i.test(message);
+}
+
+function assertBillingOrderHealthy(response: unknown): void {
+  const result = extractOpenApiResult(response);
+  const opened = result?.IsAirSearchRecOpened;
+  const state = Number(result?.InstanceState);
+  if (opened === false || state === 99) {
+    throw new ApiRequestError(
+      'API Error [ResourceNotFound.Instance]: Viking AI Search billing instance was not found or is not enabled.',
+      404,
+      'ResourceNotFound.Instance',
+      'Viking AI Search billing instance was not found or is not enabled.',
+      response
+    );
+  }
+  if (state === 2) {
+    throw new Error('Billing order exists but instance creation failed. Ask the user to revisit the purchase page and confirm the order status.');
+  }
+}
+
+function parsePurchaseEnvironmentId(value: string | undefined): EnvironmentId {
+  const normalized = (value ?? 'volcano-cn-beijing').trim().toLowerCase();
+  if (
+    normalized === 'volcano-cn-beijing' ||
+    normalized === 'volcano-ap-southeast-1' ||
+    normalized === 'byteplus-ap-southeast-1'
+  ) {
+    return normalized;
+  }
+  throw new Error(
+    'Invalid --environment-id. Use volcano-cn-beijing, volcano-ap-southeast-1, or byteplus-ap-southeast-1.'
+  );
+}
+
+function extractOpenApiResult(response: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(response)) return undefined;
+  const candidates = [response.Result, response.result, response];
+  return candidates.find(isRecord);
+}
+
 function printPrettyChatStream(rawStream: string): void {
   // `rawStream` is NDJSON. It contains multiple JSON objects separated by newlines.
   const lines = rawStream.split('\n').filter(line => line.trim().length > 0);
@@ -1361,6 +1476,13 @@ export async function runProductDomainFromArgv(domain: string, argv: string[]): 
       }
       await runChatSearchCli(argv);
       return true;
+    case 'purchase':
+      if (isDomainHelpRequest(argv)) {
+        printDomainHelp(domain);
+        return true;
+      }
+      await runPurchaseCli(argv);
+      return true;
     case 'item':
       if (isDomainHelpRequest(argv)) {
         printDomainHelp(domain);
@@ -1385,7 +1507,8 @@ export function printProductDomainsHelp(): void {
     'vs data write|import|delete',
     'vs search run|scene create|list|get|update|delete',
     'vs recommend run|scene create|list|get|update|delete',
-    'vs chat run'
+    'vs chat run',
+    'vs purchase link|order status|wait'
   ];
 
   console.log(['PRODUCT COMMANDS', renderUsageBlock(publicLines)].join('\n'));
@@ -1519,6 +1642,21 @@ COMMON FLAGS
 
 COMMON FLAGS
   --base-url --ak --sk --region --timeout-ms --data --format --jq --output`,
+    purchase: `${renderUsageBlock(
+      [
+        'vs purchase link [--environment-id <environment-id>]',
+        'vs purchase order status [service flags]',
+        'vs purchase order wait [--max-attempts <n>] [--poll-interval-ms <ms>] [service flags]'
+      ]
+    )}
+
+DESCRIPTION
+  Print the onboarding purchase page link, then check whether the onboarding purchase order is visible.
+  Use wait after the user explicitly says the purchase has completed.
+
+COMMON FLAGS
+  link: --environment-id
+  order: --base-url --ak --sk --region --timeout-ms --project-name --data --format --jq --output`,
   };
 
   console.log(helpByDomain[domain] ?? `Unknown domain: ${domain}`);
@@ -2823,6 +2961,42 @@ async function runChatSearchCli(argv: string[]): Promise<void> {
   });
 }
 
+async function runPurchaseCli(argv: string[]): Promise<void> {
+  const action = argv[0];
+  const subAction = argv[1];
+  if (action === 'link') {
+    const values = parseStandaloneOptions(argv.slice(1));
+    await runPurchaseLinkCommand({
+      environmentId: optionalString(values['environment-id'])
+    });
+    return;
+  }
+  if (action === 'order' && hasHelpFlag(argv.slice(2))) {
+    printDomainHelp('purchase');
+    return;
+  }
+  if (action !== 'order') {
+    throw new Error(`Unknown purchase subcommand: ${action}`);
+  }
+
+  const values = parseStandaloneOptions(argv.slice(2));
+  const projectOptions = toProjectScopedOptions(values);
+  switch (subAction) {
+    case 'status':
+      await runPurchaseOrderStatusCommand(projectOptions);
+      return;
+    case 'wait':
+      await runPurchaseOrderWaitCommand({
+        ...projectOptions,
+        maxAttempts: parseOptionalInt(optionalString(values['max-attempts'])),
+        pollIntervalMs: parseOptionalInt(optionalString(values['poll-interval-ms']))
+      });
+      return;
+    default:
+      throw new Error(`Unknown purchase order subcommand: ${subAction}`);
+  }
+}
+
 function parseStandaloneOptions(argv: string[]) {
   const { values } = parseArgs({
     args: argv,
@@ -2927,6 +3101,8 @@ function parseStandaloneOptions(argv: string[]) {
       force: { type: 'boolean' },
       'wait-timeout-ms': { type: 'string' },
       'poll-interval-ms': { type: 'string' },
+      'max-attempts': { type: 'string' },
+      'environment-id': { type: 'string' },
       phase: { type: 'string' },
       'skip-search': { type: 'boolean' },
       'skip-chat': { type: 'boolean' },
@@ -2983,7 +3159,7 @@ function toProjectScopedOptions(values: StandaloneValues): ProjectScopedOptions 
 
 async function callOpenApi(pathname: string, payload: unknown, options: ServiceCommandOptions): Promise<unknown> {
   const config = resolveServiceConfig(toServiceConfigInput(options));
-  return new VikingOpenApiClient(config).post(pathname, payload);
+  return new VikingOpenApiClient(config).post(pathname, withProjectName(payload, config.projectName));
 }
 
 async function callConsoleTopAction(action: string, payload: unknown, options: ServiceCommandOptions): Promise<unknown> {
@@ -3536,6 +3712,20 @@ function summarizeDatasetEntry(entry: Record<string, unknown>): Record<string, u
 
 function compactObject<T extends Record<string, unknown>>(value: T): T {
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
+}
+
+function withProjectName(payload: unknown, projectName: string): unknown {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return payload;
+  }
+  const currentProjectName = (payload as Record<string, unknown>).ProjectName;
+  if (typeof currentProjectName === 'string' && currentProjectName.trim().length > 0) {
+    return payload;
+  }
+  return {
+    ...(payload as Record<string, unknown>),
+    ProjectName: projectName
+  };
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

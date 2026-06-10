@@ -79,3 +79,4 @@ The first version supports only the `openai-compatible` protocol. Non-secret LLM
 - If the user has already placed credentials in the current shell, prefer `auth import-env` and do not ask them to paste secrets into chat
 - If LLM credentials are needed, prefer `llm import-env` or `llm login`; do not ask the user to paste LLM API keys into chat
 - Before installing or distributing a skill, confirm that the current CLI version satisfies `requires_cli`
+- If setup, auth, doctor, or runtime checks fail and the user asks a product concept, capability, API field, console UI path, purchase, billing, or general troubleshooting question outside this shared setup workflow, temporarily hand off to `vs-product-qa`; return to this workflow only after the grounded product answer is complete.
