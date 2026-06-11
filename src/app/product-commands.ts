@@ -1474,7 +1474,7 @@ COMMON FLAGS
         'vs search tune llm-check [--live] [service flags]',
         'vs search tune validate --queries <file> [--query-count <n>] [service flags]',
         'vs search tune plan --application-id <id> [--dataset-id <id>] [--queries <file>] [--profile similarity-only] [service flags]',
-        'vs search tune query-generate --application-id <id> [--dataset-id <id>] [--query-count <n>] [--sample-size <n>] [--query-batch-size <n>] [--llm-concurrency <n>] [service flags]',
+        'vs search tune query-generate --application-id <id> [--dataset-id <id>] [--query-count <n>] [--sample-size <n>] [--query-batch-size <n>] [--llm-concurrency <n>] [--retrievable-field-only] [service flags]',
         'vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [--resume-run-id <id>] [--label-source <llm|source-item|auto>] [--judge-input <text|text-image>] [--profile similarity-only] [--search-concurrency <n>] [--llm-concurrency <n>] [--timeout-ms <ms>] [service flags]',
         'vs search tune apply --application-id <id> --run-id <id> [--dry-run | --confirm-create-scene] [service flags]',
         'vs search tune report --run-id <id> [--output-dir <dir>] [service flags]',
@@ -1966,7 +1966,7 @@ EXAMPLES
 USAGE
   vs search tune llm-check [--live] [service flags]
   vs search tune validate --queries <file> [--query-count <n>] [service flags]
-  vs search tune query-generate --application-id <id> [--dataset-id <id>] [--query-count <n>] [service flags]
+  vs search tune query-generate --application-id <id> [--dataset-id <id>] [--query-count <n>] [--retrievable-field-only] [service flags]
   vs search tune plan --application-id <id> [--dataset-id <id>] [--queries <file>] [service flags]
   vs search tune run --application-id <id> [--dataset-id <id>] [--queries <file>] [service flags]
   vs search tune report --run-id <id> [--output-dir <dir>] [service flags]
@@ -2029,7 +2029,7 @@ EXAMPLES
     'tune:query-generate': `Generate a reusable synthetic query set for search tuning.
 
 USAGE
-  vs search tune query-generate --application-id <id> [--dataset-id <id>] [--query-count <n>] [--min-query-count <n>] [--sample-size <n>] [--query-batch-size <n>] [--llm-concurrency <n>] [--output-dir <dir>] [service flags]
+  vs search tune query-generate --application-id <id> [--dataset-id <id>] [--query-count <n>] [--min-query-count <n>] [--sample-size <n>] [--query-batch-size <n>] [--llm-concurrency <n>] [--retrievable-field-only] [--output-dir <dir>] [service flags]
 
 DESCRIPTION
   Uses paged dataset samples and the configured CLI LLM to generate a JSONL query set in multiple
@@ -2044,6 +2044,7 @@ KEY FLAGS
   --sample-size     Dataset sample items to load across pages. Default: 200.
   --query-batch-size Queries requested from each LLM generation call. Default: 10.
   --llm-concurrency Concurrent LLM generation calls. Default: 100.
+  --retrievable-field-only Generate queries from text IndexFields only; ImageIndexFields are excluded.
   --output-dir      Artifact root. Default: .viking/search-tuning.
 
 EXAMPLES
@@ -2644,6 +2645,7 @@ async function runSearchCli(argv: string[]): Promise<void> {
             sampleSize: parseOptionalInt(optionalString(values['sample-size'])),
             queryBatchSize: parseOptionalInt(optionalString(values['query-batch-size'])),
             llmConcurrency: parseOptionalInt(optionalString(values['llm-concurrency'])),
+            retrievableFieldOnly: optionalBoolean(values['retrievable-field-only']),
             outputDir: optionalString(values['output-dir'])
           });
           return;
