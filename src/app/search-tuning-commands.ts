@@ -434,17 +434,24 @@ export async function runSearchTuneApplyCommand(options: SearchTuneApplyOptions)
   }
 
   const serviceConfig = resolveServiceConfig(toServiceConfigInput(options));
+  const projectName = options.projectName ?? serviceConfig.projectName;
   const openapi = new VikingOpenApiClient(serviceConfig);
-  const createResponse = await openapi.post('/api/v1/CreateSearchScene', draft.createPayload);
+  const createResponse = await openapi.post('/api/v1/CreateSearchScene', {
+    ...draft.createPayload,
+    ProjectName: projectName
+  });
   const sceneId = extractSceneId(createResponse);
   if (!sceneId) {
     throw new Error('CreateSearchScene did not return SceneID.');
   }
-  const onlinePayload = withSceneId(draft.onlinePayload, sceneId);
+  const onlinePayload = withSceneId({
+    ...draft.onlinePayload,
+    ProjectName: projectName
+  }, sceneId);
   const onlineResponse = await openapi.post('/api/v1/OnlineSearchScene', onlinePayload);
   const readbackResponse = await openapi.post('/api/v1/GetSearchScene', {
     AppID: options.applicationId,
-    ProjectName: options.projectName,
+    ProjectName: projectName,
     SceneID: sceneId
   });
 

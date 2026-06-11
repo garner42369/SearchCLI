@@ -80,17 +80,21 @@ export async function fetchAppStatusSnapshot(
   query: AppStatusQuery
 ): Promise<AppStatusSnapshot> {
   const client = new VikingOpenApiClient(config);
+  const projectName = query.projectName ?? config.projectName;
   const applicationResponse = await client.post<Record<string, unknown>>('/api/v1/GetApplication', compactObject({
     AppID: query.applicationId,
-    ProjectName: query.projectName
+    ProjectName: projectName
   }));
   const listResponse = await client.post<Record<string, unknown>>('/api/v1/ListAppDataConfigs', compactObject({
     AppID: query.applicationId,
-    ProjectName: query.projectName,
+    ProjectName: projectName,
     ActivatedOnly: query.activatedOnly
   }));
 
-  return deriveAppStatusSnapshot(unwrapResultEnvelope(applicationResponse), unwrapResultEnvelope(listResponse), query);
+  return deriveAppStatusSnapshot(unwrapResultEnvelope(applicationResponse), unwrapResultEnvelope(listResponse), {
+    ...query,
+    projectName
+  });
 }
 
 export function deriveAppStatusSnapshot(

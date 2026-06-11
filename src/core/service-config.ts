@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { z } from 'zod';
+import { formatMissingVikingAuthMessage } from './auth-errors';
 import { resolveCliDefaults } from './user-config';
 
 export interface ServiceConfig {
@@ -64,9 +65,7 @@ export function resolveServiceConfig(input: ServiceConfigInput): ServiceConfig {
   });
 
   if (!resolved.accessKeyId || !resolved.secretKey) {
-    throw new Error(
-      'Missing Viking auth. Run `vs auth import-env`, `vs auth login`, set VIKING_AK/VIKING_SK, or pass --ak/--sk.'
-    );
+    throw new Error(formatMissingVikingAuthMessage());
   }
 
   return {

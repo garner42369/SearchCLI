@@ -11,26 +11,34 @@ export interface EnvironmentEndpoints {
   region: string;
   controlPlaneBaseUrl: string;
   dataPlaneBaseUrl: string;
+  purchasePageUrl: string;
 }
+
+export const VOLCANO_PURCHASE_CN_BEIJING_DEV_URL = 'https://console.volcengine.com/common-buy/AISearch-DevTest%7C%7C7291580783171539244?ProjectName=default';
+export const VOLCANO_PURCHASE_CN_BEIJING_PROD_URL = 'https://console.volcengine.com/common-buy/REC-SaaS-LLM-SEARCH%7C%7C7291580783171539244'
+const VOLCANO_PURCHASE_CN_BEIJING_PAGE_URL = VOLCANO_PURCHASE_CN_BEIJING_PROD_URL;
 
 const ENVIRONMENT_REGISTRY: readonly EnvironmentEndpoints[] = [
   {
     envId: 'volcano-cn-beijing',
     region: 'cn-beijing',
     controlPlaneBaseUrl: 'https://aisearch.cn-beijing.volcengineapi.com',
-    dataPlaneBaseUrl: 'https://aisearch.cn-beijing.volces.com'
+    dataPlaneBaseUrl: 'https://aisearch.cn-beijing.volces.com',
+    purchasePageUrl: VOLCANO_PURCHASE_CN_BEIJING_PAGE_URL
   },
   {
     envId: 'volcano-ap-southeast-1',
     region: 'ap-southeast-1',
     controlPlaneBaseUrl: 'https://aisearch.ap-southeast-1.volcengineapi.com',
-    dataPlaneBaseUrl: 'https://aisearch.ap-southeast-1.volces.com'
+    dataPlaneBaseUrl: 'https://aisearch.ap-southeast-1.volces.com',
+    purchasePageUrl: 'https://console.volcengine.com/common-buy/REC-SaaS-LLM-SEARCH%7C%7C7406000721643196716'
   },
   {
     envId: 'byteplus-ap-southeast-1',
     region: 'ap-southeast-1',
     controlPlaneBaseUrl: 'https://aisearch.ap-southeast-1.byteplusapi.com',
-    dataPlaneBaseUrl: 'https://aisearch.ap-southeast-1.bytepluses.com'
+    dataPlaneBaseUrl: 'https://aisearch.ap-southeast-1.bytepluses.com',
+    purchasePageUrl: 'https://console.byteplus.com/common-buy/REC-SaaS-LLM-SEARCH%7C%7C7291575107170881836'
   }
 ];
 
@@ -52,6 +60,17 @@ export function getEnvironmentById(envId: EnvironmentId): EnvironmentEndpoints {
     throw new Error(`Unknown environment id: ${envId}`);
   }
   return found;
+}
+
+export function resolvePurchasePageUrl(environmentId: EnvironmentId): {
+  environmentId: EnvironmentId;
+  purchasePageUrl: string;
+} {
+  const env = getEnvironmentById(environmentId);
+  return {
+    environmentId,
+    purchasePageUrl: env.purchasePageUrl
+  };
 }
 
 function safeHost(input: string): string | undefined {

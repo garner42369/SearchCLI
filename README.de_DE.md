@@ -4,7 +4,7 @@
 
 # SearchCLI
 
-[English](README.md) | [简体中文](README.zh_CN.md) | [日本語](README.ja_JP.md) | Deutsch | [한국어](README.ko_KR.md) | [Français](README.fr_FR.md) | [Русский](README.ru_RU.md) | [Italiano](README.it_IT.md)
+[English](README.md) | [简体中文](README.zh_CN.md) | [日本語](README.ja_JP.md) | Deutsch | [한국어](README.ko_KR.md) | [Français](README.fr_FR.md) | [Русский](README.ru_RU.md) | [Italiano](README.it_IT.md) | [Español](README.es_ES.md) | [Português](README.pt_BR.md)
 
 Verbinde stabile, abstimmbare Suche, Empfehlungen und konversationelle Suche mit deinem Agent-System oder Business-System.
 
