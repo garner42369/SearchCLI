@@ -18,6 +18,7 @@
     "README.ru_RU.md",
     "README.it_IT.md",
     "README.es_ES.md",
+    "README.pt_BR.md",
     "package.json"
   ],
   "engines": {
