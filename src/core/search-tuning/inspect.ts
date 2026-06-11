@@ -5,12 +5,14 @@ import type { ServiceConfig } from '../service-config';
 import { VikingRuntimeApiClient } from '../runtime-api-client';
 import { VikingOpenApiClient } from '../openapi-client';
 import { fetchAppStatusSnapshot } from '../app-status';
+import type { TuningFieldContext } from './types';
 
 export interface TuningContext {
   applicationId: string;
   datasetId: string;
   sceneId?: string;
   sampleItems: Array<Record<string, unknown>>;
+  fieldContext?: TuningFieldContext;
   imageIndexFields?: string[];
 }
 
@@ -20,6 +22,7 @@ export async function inspectTuningContext(options: {
   datasetId?: string;
   sceneId?: string;
   sampleSize?: number;
+  includeFieldContext?: boolean;
   includeImageIndexFields?: boolean;
 }): Promise<TuningContext> {
   let datasetId = options.datasetId;
@@ -33,33 +36,58 @@ export async function inspectTuningContext(options: {
     }
   }
 
+  const fieldContext =
+    options.includeFieldContext || options.includeImageIndexFields
+      ? await loadTuningFieldContext(options.config, options.applicationId, datasetId)
+      : undefined;
+
   return {
     applicationId: options.applicationId,
     datasetId,
     sceneId: options.sceneId,
     sampleItems: await loadDatasetSamples(options.config, datasetId, options.sampleSize ?? 20),
+    ...(options.includeFieldContext ? { fieldContext } : {}),
     ...(options.includeImageIndexFields
-      ? { imageIndexFields: await loadImageIndexFields(options.config, options.applicationId, datasetId) }
+      ? { imageIndexFields: fieldContext?.imageIndexFields ?? [] }
       : {})
   };
 }
 
-async function loadImageIndexFields(config: ServiceConfig, applicationId: string, datasetId: string): Promise<string[]> {
+async function loadTuningFieldContext(config: ServiceConfig, applicationId: string, datasetId: string): Promise<TuningFieldContext> {
   const client = new VikingOpenApiClient(config);
   const response = await client.post('/api/v1/GetAppDataConfig', {
     AppID: applicationId,
     DatasetID: datasetId,
     ProjectName: config.projectName
   });
-  return readImageIndexFields(response);
+  return readTuningFieldContext(response);
 }
 
-function readImageIndexFields(response: unknown): string[] {
+export function readTuningFieldContext(response: unknown): TuningFieldContext {
   const result = isRecord(response) ? response.Result : undefined;
   const config = isRecord(result) ? result.Config : undefined;
-  const dataConfig = isRecord(config) ? config.DataConfig : undefined;
-  const raw = isRecord(dataConfig) ? dataConfig.ImageIndexFields : undefined;
-  return Array.isArray(raw) ? raw.map(item => String(item).trim()).filter(Boolean) : [];
+  const dataConfig = isRecord(config) && isRecord(config.DataConfig) ? config.DataConfig : undefined;
+  const fieldDescMap = isRecord(dataConfig?.FieldDescMap) ? dataConfig.FieldDescMap : undefined;
+  const fieldDescriptions: Record<string, string> = {};
+  if (fieldDescMap) {
+    for (const [key, value] of Object.entries(fieldDescMap)) {
+      if (typeof value === 'string' && value.trim()) {
+        fieldDescriptions[key] = value.trim();
+      }
+    }
+  }
+  return {
+    indexFields: asStringArray(dataConfig?.IndexFields),
+    filterFields: asStringArray(dataConfig?.FilterFields),
+    suggestFields: asStringArray(dataConfig?.SuggestFields),
+    imageIndexFields: asStringArray(dataConfig?.ImageIndexFields),
+    fieldDescriptions
+  };
+}
+
+export function textRetrievableFields(context: TuningFieldContext): string[] {
+  const imageFields = new Set(context.imageIndexFields);
+  return context.indexFields.filter(field => !imageFields.has(field));
 }
 
 async function loadDatasetSamples(
@@ -132,6 +160,10 @@ function unwrapResult(value: unknown): unknown {
 
 function readArray(value: unknown, key: string): unknown[] {
   return isRecord(value) && Array.isArray(value[key]) ? value[key] : [];
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(item => String(item).trim()).filter(Boolean) : [];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

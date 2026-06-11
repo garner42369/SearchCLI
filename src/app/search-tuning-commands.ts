@@ -11,7 +11,7 @@ import { VikingOpenApiClient } from '../core/openapi-client';
 import { buildSceneApplyDraft, withSceneId } from '../core/search-tuning/apply';
 import { compareSearchScenes, compareTuningRuns } from '../core/search-tuning/compare';
 import { buildSearchTuningPlan } from '../core/search-tuning/plan';
-import { inspectTuningContext } from '../core/search-tuning/inspect';
+import { inspectTuningContext, textRetrievableFields } from '../core/search-tuning/inspect';
 import { loadTuningReport, loadTuningRunState, runSearchTuning, type TuningProgressEvent } from '../core/search-tuning/runner';
 import { generateTuningQueries, generateTuningQuerySet } from '../core/search-tuning/query-generator';
 import { stableStringify } from '../core/search-tuning/hash';
@@ -65,6 +65,7 @@ export interface SearchTuneQueryGenerateOptions extends SearchTuneServiceOptions
   sampleSize?: number;
   queryBatchSize?: number;
   llmConcurrency?: number;
+  retrievableFieldOnly?: boolean;
   outputDir?: string;
 }
 
@@ -285,7 +286,8 @@ export async function runSearchTuneQueryGenerateCommand(options: SearchTuneQuery
     applicationId: options.applicationId,
     datasetId: options.datasetId,
     sceneId: options.sceneId,
-    sampleSize: options.sampleSize ?? 200
+    sampleSize: options.sampleSize ?? 200,
+    includeFieldContext: Boolean(options.retrievableFieldOnly)
   });
   const sampleLoadMs = Date.now() - sampleLoadStartedAt;
   const queryCount = options.queryCount ?? 100;
@@ -295,7 +297,9 @@ export async function runSearchTuneQueryGenerateCommand(options: SearchTuneQuery
     sampleItems: context.sampleItems,
     count: queryCount,
     batchSize: options.queryBatchSize ?? 10,
-    llmConcurrency: options.llmConcurrency ?? 100
+    llmConcurrency: options.llmConcurrency ?? 100,
+    fieldContext: context.fieldContext,
+    retrievableFieldOnly: Boolean(options.retrievableFieldOnly)
   });
   const generatedAt = new Date().toISOString();
   const fileId = generatedAt.replaceAll(':', '-').replace(/\.\d+Z$/, 'Z');
@@ -324,6 +328,8 @@ export async function runSearchTuneQueryGenerateCommand(options: SearchTuneQuery
     shortfall: generation.shortfall,
     queryFile,
     sampleItemCount: context.sampleItems.length,
+    retrievableFieldOnly: Boolean(options.retrievableFieldOnly),
+    textRetrievableFields: context.fieldContext ? textRetrievableFields(context.fieldContext) : undefined,
     queryBatchSize: options.queryBatchSize ?? 10,
     llmConcurrency: options.llmConcurrency ?? 100,
     llmRequestCount: generation.llmRequestCount,

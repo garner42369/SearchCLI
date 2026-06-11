@@ -4,7 +4,8 @@
 import { loadJsonOrJsonl } from '../files';
 import { parseJsonResponse, requestChatCompletion, type LlmClientConfig } from '../llm-client';
 import type { SearchCase } from '../types';
-import type { TuningQuery } from './types';
+import { textRetrievableFields } from './inspect';
+import type { TuningFieldContext, TuningQuery } from './types';
 
 const QUERY_GENERATION_PROMPT = `You generate realistic text search queries for evaluating a search application.
 Return only JSON. The JSON must be an array of objects with:
@@ -14,7 +15,9 @@ Return only JSON. The JSON must be an array of objects with:
 - intent: short explanation of the user intent
 - sourceItemIds: array of source item ids when available
 
-Generate exactly the requested count for this batch. Generate diverse queries grounded in the provided item samples. Do not invent hard attributes that are not supported by the samples. Avoid query texts listed in existing_query_texts.`;
+Generate exactly the requested count for this batch. Generate diverse queries grounded in the provided item samples. Do not invent hard attributes that are not supported by the samples. Avoid query texts listed in existing_query_texts.
+
+If field_context.retrievable_field_only is true, generate queries only from field_context.text_retrievable_fields and the provided item samples. Image fields are media assets and must not be treated as text-searchable attributes.`;
 
 export interface GenerateTuningQuerySetResult {
   queries: TuningQuery[];
@@ -38,6 +41,8 @@ export async function generateTuningQueries(options: {
   count: number;
   batchSize?: number;
   llmConcurrency?: number;
+  fieldContext?: TuningFieldContext;
+  retrievableFieldOnly?: boolean;
 }): Promise<TuningQuery[]> {
   return (await generateTuningQuerySet(options)).queries;
 }
@@ -48,15 +53,28 @@ export async function generateTuningQuerySet(options: {
   count: number;
   batchSize?: number;
   llmConcurrency?: number;
+  fieldContext?: TuningFieldContext;
+  retrievableFieldOnly?: boolean;
 }): Promise<GenerateTuningQuerySetResult> {
   if (options.sampleItems.length === 0) {
     throw new Error('Cannot generate queries because no dataset sample items were available. Pass --queries with a query file.');
+  }
+  const fieldContext = options.fieldContext;
+  if (options.retrievableFieldOnly && !options.fieldContext) {
+    throw new Error('Cannot generate retrievable-field-only queries because app dataset field config was not available.');
+  }
+  if (options.retrievableFieldOnly && fieldContext && textRetrievableFields(fieldContext).length === 0) {
+    throw new Error('Cannot generate retrievable-field-only queries because GetAppDataConfig returned no text IndexFields.');
   }
 
   const requestedQueryCount = Math.max(1, Math.floor(options.count));
   const batchSize = Math.max(1, Math.floor(options.batchSize ?? 10));
   const llmConcurrency = Math.max(1, Math.floor(options.llmConcurrency ?? 100));
   const maxRequests = Math.max(Math.ceil(requestedQueryCount / batchSize) * 3, 1);
+  const sampleItems = options.retrievableFieldOnly && fieldContext
+    ? filterSampleItemsToTextRetrievableFields(options.sampleItems, fieldContext)
+    : options.sampleItems;
+  const fieldContextPayload = buildFieldContextPayload(fieldContext, Boolean(options.retrievableFieldOnly));
   const queries: TuningQuery[] = [];
   const seenTexts = new Set<string>();
   const warnings: string[] = [];
@@ -75,7 +93,7 @@ export async function generateTuningQuerySet(options: {
       return {
         batchIndex,
         count: Math.min(batchSize, requestedQueryCount - queries.length),
-        itemSamples: pickSampleWindow(options.sampleItems, batchIndex, 20),
+        itemSamples: pickSampleWindow(sampleItems, batchIndex, 20),
         existingQueryTexts: queries.map(query => query.text).slice(-50)
       };
     });
@@ -88,7 +106,8 @@ export async function generateTuningQuerySet(options: {
           requested_total_count: requestedQueryCount,
           batch_index: input.batchIndex,
           item_samples: input.itemSamples,
-          existing_query_texts: input.existingQueryTexts
+          existing_query_texts: input.existingQueryTexts,
+          field_context: fieldContextPayload
         })
       )
     );
@@ -180,6 +199,26 @@ export function searchCaseToTuningQuery(searchCase: SearchCase, index: number): 
   };
 }
 
+export function filterSampleItemsToTextRetrievableFields(
+  sampleItems: Array<Record<string, unknown>>,
+  fieldContext: TuningFieldContext
+): Array<Record<string, unknown>> {
+  const allowedFields = textRetrievableFields(fieldContext);
+  return sampleItems.map(item => {
+    const filtered: Record<string, unknown> = {};
+    if (item.item_id !== undefined) {
+      filtered.item_id = item.item_id;
+    }
+    for (const field of allowedFields) {
+      const value = readFieldValue(item, field);
+      if (value !== undefined) {
+        filtered[field] = value;
+      }
+    }
+    return filtered;
+  });
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -194,6 +233,35 @@ function pickSampleWindow(
   const window = sampleItems.slice(offset, offset + windowSize);
   if (window.length >= windowSize) return window;
   return [...window, ...sampleItems.slice(0, windowSize - window.length)];
+}
+
+function buildFieldContextPayload(fieldContext: TuningFieldContext | undefined, retrievableFieldOnly: boolean): Record<string, unknown> | undefined {
+  if (!fieldContext) return undefined;
+  return {
+    retrievable_field_only: retrievableFieldOnly,
+    text_retrievable_fields: textRetrievableFields(fieldContext),
+    filter_fields: fieldContext.filterFields,
+    suggest_fields: fieldContext.suggestFields,
+    field_descriptions: fieldContext.fieldDescriptions
+  };
+}
+
+function readFieldValue(item: Record<string, unknown>, field: string): unknown {
+  if (Object.prototype.hasOwnProperty.call(item, field)) {
+    return item[field];
+  }
+  if (!field.includes('.')) {
+    return undefined;
+  }
+  const segments = field.split('.').filter(Boolean);
+  let current: unknown = item;
+  for (const segment of segments) {
+    if (!isRecord(current) || !Object.prototype.hasOwnProperty.call(current, segment)) {
+      return undefined;
+    }
+    current = current[segment];
+  }
+  return current;
 }
 
 function normalizeQueryText(text: string): string {

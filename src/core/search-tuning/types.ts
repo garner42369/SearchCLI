@@ -8,6 +8,14 @@ export type EffectiveTuningLabelSource = 'llm' | 'source-item';
 export type TuningStrategyOptimizer = 'matrix' | 'spa';
 export type TuningJudgeInput = 'text' | 'text-image';
 
+export interface TuningFieldContext {
+  indexFields: string[];
+  filterFields: string[];
+  suggestFields: string[];
+  imageIndexFields: string[];
+  fieldDescriptions: Record<string, string>;
+}
+
 export interface TuningQuery {
   id: string;
   text: string;

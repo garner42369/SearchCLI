@@ -23,6 +23,7 @@ export default class SearchTuneQueryGenerate extends Command {
     'sample-size': Flags.integer({ default: 200, min: 1, description: 'Dataset sample items to load across pages. Default: 200.' }),
     'query-batch-size': Flags.integer({ default: 10, min: 1, description: 'Queries requested from each LLM generation call. Default: 10.' }),
     'llm-concurrency': Flags.integer({ default: 100, min: 1, description: 'Concurrent LLM query generation calls. Default: 100.' }),
+    'retrievable-field-only': Flags.boolean({ description: 'Generate queries from text IndexFields only; ImageIndexFields are excluded.' }),
     'output-dir': Flags.string({ description: 'Tuning artifact root. Defaults to .viking/search-tuning.' })
   };
 
@@ -45,6 +46,7 @@ export default class SearchTuneQueryGenerate extends Command {
       sampleSize: flags['sample-size'],
       queryBatchSize: flags['query-batch-size'],
       llmConcurrency: flags['llm-concurrency'],
+      retrievableFieldOnly: flags['retrievable-field-only'],
       outputDir: flags['output-dir']
     });
   }

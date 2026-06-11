@@ -175,6 +175,7 @@ When the user asks for search tuning, ask first whether they have a tuning query
 
 ```bash
 vs search tune llm-check --json
+# Add --retrievable-field-only if generated queries should use only configured text IndexFields.
 vs search tune query-generate --application-id <app> --dataset-id <dataset> --query-count 100 --sample-size 200 --query-batch-size 10 --llm-concurrency 100 --timeout-ms 120000 --json
 vs search tune plan --application-id <app> --dataset-id <dataset> --queries <queryFile> --json
 vs search tune run --application-id <app> --dataset-id <dataset> --queries <queryFile> --search-concurrency 18 --llm-concurrency 100 --timeout-ms 120000

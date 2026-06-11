@@ -30,7 +30,7 @@ This first version is for similarity tuning. It defaults to text-query/text-item
 - `llm login` / `llm import-env` / `llm status`: configure and verify OpenAI-compatible LLM credentials without exposing API keys in chat or plain config
 - `search tune llm-check`: verify CLI-managed LLM configuration
 - `search tune validate`: validate a query set locally before planning or running; reports schema issues, duplicate ids/text, sourceItemIds coverage, query type skew, and a label-source recommendation
-- `search tune query-generate`: generate a reusable synthetic query set from paged dataset samples with batched concurrent LLM calls when the user has no query set
+- `search tune query-generate`: generate a reusable synthetic query set from paged dataset samples with batched concurrent LLM calls when the user has no query set; add `--retrievable-field-only` when the user wants generation constrained to text `IndexFields` from app dataset config, excluding `ImageIndexFields`
 - `search tune plan`: show query source, candidate strategies, estimated requests/labels, parameter coverage, source-item coverage, warnings, and suggested first-pass size before running
 - `search tune run`: generate or load queries, run candidate search strategies, label top results, compute metrics, and write artifacts; supports `--label-source llm|source-item|auto`, `--judge-input text|text-image`, `--max-judge-images`, `--llm-retries`, `--max-label-failure-rate`, and `--verbose`; use `--resume-run-id <run-id>` to continue an interrupted run
 - `search tune report`: read a previous tuning report
@@ -60,6 +60,7 @@ This first version is for similarity tuning. It defaults to text-query/text-item
    - no rerank, personalization, hotness, boost/bury, sort rules, serving controls, or business operating rules
 5. If the user has no query set, generate one first:
    - `vs search tune query-generate --application-id <id> --dataset-id <dataset> --query-count 100 --sample-size 200 --query-batch-size 10 --llm-concurrency 100 --timeout-ms 120000 --json`
+   - if synthetic queries should only use configured text retrievable fields: add `--retrievable-field-only`, which reads `GetAppDataConfig.DataConfig.IndexFields` and excludes `ImageIndexFields`
    Show the returned `sampleQueries`, `typeCounts`, `requestedQueryCount`, `actualQueryCount`, `shortfall`, and `warnings` to the user. If `ok=false`, do not continue to `plan` or `run`; retry with larger timeout/sample size or ask for a real query set. Use the returned `queryFile` only after the user accepts the query set for first-pass tuning.
 6. Validate the accepted query set before planning:
    - `vs search tune validate --queries <file> --json`
