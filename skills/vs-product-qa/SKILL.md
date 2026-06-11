@@ -35,7 +35,8 @@ If another skill is active and the user asks a product-concept question outside 
 ## Preconditions
 
 - The installed `vs` CLI is available when answering CLI behavior, local auth, LLM config, or local error questions.
-- Official Volcengine documentation can be fetched when answering product concepts, API field semantics, purchase, billing, quota, or console UI path questions.
+- This skill includes a bundled internal documentation helper under [references/volcengine-documentation/SKILL.md](references/volcengine-documentation/SKILL.md).
+- Official Volcengine documentation must be fetched through that bundled helper when answering product concepts, API field semantics, purchase, billing, quota, or console UI path questions.
 - The agent must classify the question before choosing a knowledge source.
 - The agent must not rely on repository source code, generated repo snapshots, or training memory as the source of truth in customer environments.
 - If the selected source cannot answer the question, explicitly say the point is not covered by `vs` help or the official documentation checked in this turn, then suggest support ticket / oncall escalation.
@@ -55,10 +56,10 @@ Classify the question, then pick the source. Do not default to one source for al
 | CLI command / flag / usage | `vs <cmd> --help` | "How do I use `vs item apply`" |
 | Local authentication / credential | `vs auth status` / `vs doctor` | "Why does `vs auth status` say invalid" |
 | Local CLI error / stack trace | The error's own recovery output | "I see `ERR_AUTH_REQUIRED`; what now" |
-| Product concept (scene, hybrid, ANN, rerank, etc.) | Official docs | "What is a scene in Viking AI Search" |
-| API field semantics, request/response shape | Official docs / OpenAPI docs | "What does `recall_mode` accept" |
-| Purchase / billing / pricing / quota | Official docs | "How do I upgrade my plan" |
-| Console UI path / where to click | Official docs | "Where do I configure boost/bury" |
+| Product concept (scene, hybrid, ANN, rerank, etc.) | Official docs via the bundled documentation helper | "What is a scene in Viking AI Search" |
+| API field semantics, request/response shape | Official docs via the bundled documentation helper | "What does `recall_mode` accept" |
+| Purchase / billing / pricing / quota | Official docs via the bundled documentation helper | "How do I upgrade my plan" |
+| Console UI path / where to click | Official docs via the bundled documentation helper | "Where do I configure boost/bury" |
 
 Do not default to `vs --help` for product-concept questions; CLI help does not define product concepts. Do not default to docs for "what does this flag do"; the installed CLI is authoritative for command behavior.
 
@@ -81,12 +82,35 @@ Before recommending a command or flag, validate that it exists through `vs skill
 
 ### Documentation source
 
-Root URL: `https://www.volcengine.com/docs/85296/1544972?lang=en`
+Bundled helper:
+
+1. This skill has a private documentation helper bundled under [references/volcengine-documentation/SKILL.md](references/volcengine-documentation/SKILL.md).
+2. Use that helper only as an internal sub-workflow of `vs-product-qa`.
+3. Do not expose the helper as a separate skill to the user.
+4. Do not ask the user to install, trigger, or switch to the helper explicitly.
+5. Documentation-grounded answers must use the bundled helper; do not switch to generic web browsing for this source.
+6. The product code for Viking AI Search is `aisearch`. When the helper uses its `search` action, prefer retrying with `ServiceCodes=aisearch` for product-scoped lookup.
+
+Base root URL: `https://www.volcengine.com/docs/85296/1544972`
+
+Language-specific root selection:
+
+- If the user's question is Chinese, use: `https://www.volcengine.com/docs/85296/1544972?lang=cn`
+- Otherwise, use: `https://www.volcengine.com/docs/85296/1544972?lang=en`
+
+Scope restriction:
+
+- Only access the selected language root URL and its child pages under the same documentation subtree.
+- Do not access sibling product pages, other documentation roots, search pages, homepage navigation, or external sites.
+- Do not switch between `?lang=cn` and `?lang=en` within the same answer unless the user changes language in a later turn.
 
 Source acquisition protocol:
 
-1. Primary path: fetch the root URL, parse the sidebar `<a href>` list, identify the target sub-page, fetch that sub-page, and extract the relevant body text.
-2. Fallback path: if sub-page extraction fails because of selector changes, network errors, or timeout, return the root URL and tell the user to browse manually. Do not guess sub-page URLs.
+1. Select the root URL by the user's question language using the rule above.
+2. If the target page URL is already known, or the user directly provides a page URL under this root, use the helper script's `fetch` action first.
+3. Otherwise, use the helper script's `search` action first. For Viking AI Search questions, the product code is `aisearch`, so the helper may retry `search` with `ServiceCodes=aisearch` to narrow results before choosing a page.
+4. After identifying the correct page under the same subtree, use the helper script's `fetch` action to retrieve the full page content and extract the relevant section.
+5. Fallback path: if sub-page extraction fails because of selector changes, network errors, or timeout, return the selected root URL and tell the user to browse manually. Do not guess sub-page URLs.
 
 Fetch budget:
 
@@ -119,12 +143,12 @@ These may be used later only if they become publicly available and are actually 
 2. Fetch from the chosen source:
    - CLI route: run the relevant `vs ... --help`, status, doctor, or skill command.
    - Local CLI error route: use the error's own recovery output from this turn first; only run help/status commands if the recovery output is missing or ambiguous.
-   - Docs route: follow the documentation source acquisition protocol.
+   - Docs route: use the bundled documentation helper privately inside `vs-product-qa`; do not expose or recommend it as a separate skill. Select `?lang=cn` for Chinese questions or `?lang=en` for non-Chinese questions. If the page URL is already known, try the helper script's `fetch` action first; otherwise start with `search`, and for Viking AI Search questions the helper may narrow results with product code `aisearch`, then use `fetch` on the chosen page. Stay within the selected root page and its child pages only.
 3. Extract only the relevant section or output lines needed to answer.
 4. Answer in the required output format.
 5. If write operations such as `apply`, `update`, `create`, or `bind` are mentioned, explain only the safe dry-run or draft path unless the user explicitly asks to run a specialized workflow. This skill must not execute write commands.
 6. If credentials, environment variables, or `vs auth import-env` are involved, append the AK/SK security notice from [references/aksk-notice.md](references/aksk-notice.md).
-7. If no source can answer, say `unknown` and explicitly state that the checked `vs` help or official documentation does not cover this point; cite the root documentation URL or the CLI command checked, and suggest support ticket / oncall escalation.
+7. If no source can answer, say `unknown` and explicitly state that the checked `vs` help or official documentation does not cover this point; cite the selected language root documentation URL or the CLI command checked, and suggest support ticket / oncall escalation.
 
 ## Output Format
 
@@ -155,7 +179,11 @@ Rules:
 7. **Honest unknowns**: if all available sources cannot answer, return `unknown`, explicitly say the checked `vs` help or official documentation does not cover the point, and include the root documentation URL or a support-ticket / oncall suggestion. Do not fabricate.
 8. **Honest fallback**: if exact sub-page lookup fails and the answer falls back to the chapter root, explicitly say: "exact sub-page lookup failed; here is the chapter root."
 9. **No large doc dumps**: summarize in your own words and link the source instead of pasting long documentation sections.
-10. **Delegation**: if the user asks for sign-up / purchase, item onboarding, or search tuning execution, hand off using [references/delegation.md](references/delegation.md) instead of answering inside this skill.
+10. **Bundled helper only**: for documentation-grounded answers, use the bundled documentation helper inside `vs-product-qa`; do not expose it as a separate skill, and do not ask the user to install or invoke it explicitly.
+11. **Language-aware root URL**: append `?lang=cn` for Chinese questions and `?lang=en` for non-Chinese questions when selecting the documentation root for the current answer.
+12. **Strict doc scope**: only access the selected language root page `https://www.volcengine.com/docs/85296/1544972` and its child pages in the same subtree. Do not access other roots, sibling docs, site-wide search, or external pages.
+13. **Product-scoped doc search**: for Viking AI Search documentation lookup through the helper script's `search` action, prefer product code `aisearch` when narrowing or retrying results.
+14. **Delegation**: if the user asks for sign-up / purchase, item onboarding, or search tuning execution, hand off using [references/delegation.md](references/delegation.md) instead of answering inside this skill.
 
 ## Delegation
 
@@ -184,8 +212,11 @@ Expected shape:
 User: "What is a scene in Viking AI Search?"
 
 1. Classify as product concept.
-2. Fetch the documentation root, parse sidebar links, fetch the relevant sub-page if found.
-3. Answer using only retrieved documentation.
+2. Use the bundled documentation helper privately inside `vs-product-qa`.
+3. Choose the documentation root by user language: `?lang=cn` for Chinese, otherwise `?lang=en`.
+4. Try the helper script's `search` action first; for Viking AI Search questions, the helper may narrow the result set with product code `aisearch`.
+5. After identifying the right page, use the helper script's `fetch` action to retrieve the full page content from the same subtree.
+6. Answer using only retrieved documentation.
 
 ### Delegation question
 
@@ -197,3 +228,4 @@ Answer: "This is covered by `vs-user-onboarding` because it is a sign-up, purcha
 
 - AK/SK security notice: [references/aksk-notice.md](references/aksk-notice.md)
 - Delegation matrix: [references/delegation.md](references/delegation.md)
+- Bundled documentation helper: [references/volcengine-documentation/SKILL.md](references/volcengine-documentation/SKILL.md)
