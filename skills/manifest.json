@@ -34,7 +34,9 @@
       "files": [
         "vs-product-qa/SKILL.md",
         "vs-product-qa/references/aksk-notice.md",
-        "vs-product-qa/references/delegation.md"
+        "vs-product-qa/references/delegation.md",
+        "vs-product-qa/references/volcengine-documentation/SKILL.md",
+        "vs-product-qa/references/volcengine-documentation/scripts/volcengine_docs.py"
       ]
     },
     {

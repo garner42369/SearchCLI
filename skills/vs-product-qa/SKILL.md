@@ -12,61 +12,57 @@ commands: doctor, auth status, llm status, skill list, skill search, skill show
 
 ## When to Use
 
-Use this skill when the user asks product questions about Viking AI Search and expects a grounded answer instead of agent memory.
+Use this skill when the user asks grounded questions about Viking AI Search, including:
 
-Broad trigger intents include product concepts, capability explanations, CLI usage, API/auth semantics, configuration guidance, console UI paths, billing/quota questions, and local error troubleshooting.
+- product concepts such as scene, dataset, hybrid search, ANN, rerank, or agentic search
+- capability or configuration questions such as recommendation setup, boost/bury, or rerank enablement
+- API and authentication questions such as AK/SK usage, field semantics, or error meaning
+- CLI usage and local troubleshooting such as `vs item apply`, `vs auth status`, or local stack traces
+- console path, billing, pricing, or quota questions
 
-Typical trigger questions include:
+Do not use this skill for workflow execution. Delegate instead:
 
-- Concept: "what is a scene / dataset / hybrid search / agentic search"
-- Onboarding path: "which dataset type fits my use case", "how do I configure recommendation"
-- API and auth: "how does AK/SK work", "what does error code X mean"
-- Configuration: "where do I set boost/bury", "how do I enable rerank"
-- CLI usage: "how do I use `vs item apply`", "what does `vs auth status` mean"
+- sign-up, purchase, payment, or first AK/SK setup -> `vs-user-onboarding`
+- item data ingestion or dataset creation -> `vs-item-onboarding`
+- search tuning suggestions or execution -> `vs-search-tuning`
 
-Do not use this skill when the user is asking to execute a specialized workflow:
-
-- sign-up, purchase, payment, or first AK/SK setup -> delegate to `vs-user-onboarding`
-- item data ingestion or dataset creation -> delegate to `vs-item-onboarding`
-- search tuning suggestions or search tuning execution -> delegate to `vs-search-tuning`
-
-If another skill is active and the user asks a product-concept question outside that skill's scripted scope, temporarily answer with `vs-product-qa`, then return to the original workflow only after the answer is complete.
+If another skill is active and the user asks a product question outside that skill's scripted scope, answer with `vs-product-qa`, then return to the original workflow after the answer is complete.
 
 ## Preconditions
 
-- The installed `vs` CLI is available when answering CLI behavior, local auth, LLM config, or local error questions.
-- Official Volcengine documentation can be fetched when answering product concepts, API field semantics, purchase, billing, quota, or console UI path questions.
-- The agent must classify the question before choosing a knowledge source.
-- The agent must not rely on repository source code, generated repo snapshots, or training memory as the source of truth in customer environments.
-- If the selected source cannot answer the question, explicitly say the point is not covered by `vs` help or the official documentation checked in this turn, then suggest support ticket / oncall escalation.
+- The installed `vs` CLI is available when answering CLI behavior, local auth, LLM configuration, or local error questions.
+- This skill includes a bundled internal documentation helper under [references/volcengine-documentation/SKILL.md](references/volcengine-documentation/SKILL.md).
+- Official Volcengine documentation must be fetched through that bundled helper when answering product concepts, API field semantics, purchase, billing, quota, or console UI path questions.
+- The agent must classify the question before choosing a source.
+- If no selected source can answer, explicitly say the point is not covered by the CLI output or official documentation checked in this turn, then suggest support-ticket / oncall escalation.
 
-## Customer Environment Principle
+## Core Principle
 
-Trust the user's installed `vs` CLI behavior as authoritative for how `vs` behaves on their machine. For CLI-usage questions, check `vs <cmd> --help`, `vs doctor`, `vs auth status`, `vs llm status`, or `vs skill show <name>` first before consulting documentation.
+Treat the user's installed `vs` CLI as authoritative for how `vs` behaves on that machine. For CLI behavior, always check the real CLI first. If CLI output conflicts with documentation, trust the CLI and state that the documentation may be stale.
 
-If installed CLI behavior conflicts with documentation, trust the installed CLI, state that the documentation may be stale, and suggest filing a documentation issue or support ticket.
+This skill must not rely on repository source code, generated snapshots, or model memory as the source of truth for customer-facing product answers.
 
 ## Question Routing
 
-Classify the question, then pick the source. Do not default to one source for all questions.
+Classify the question before choosing a source.
 
 | Question type | Primary source | Example |
 |---|---|---|
 | CLI command / flag / usage | `vs <cmd> --help` | "How do I use `vs item apply`" |
 | Local authentication / credential | `vs auth status` / `vs doctor` | "Why does `vs auth status` say invalid" |
-| Local CLI error / stack trace | The error's own recovery output | "I see `ERR_AUTH_REQUIRED`; what now" |
-| Product concept (scene, hybrid, ANN, rerank, etc.) | Official docs | "What is a scene in Viking AI Search" |
-| API field semantics, request/response shape | Official docs / OpenAPI docs | "What does `recall_mode` accept" |
-| Purchase / billing / pricing / quota | Official docs | "How do I upgrade my plan" |
-| Console UI path / where to click | Official docs | "Where do I configure boost/bury" |
+| Local CLI error / stack trace | the error's own recovery output | "I see `ERR_AUTH_REQUIRED`; what now" |
+| Product concept | official docs via the bundled documentation helper | "What is a scene in Viking AI Search" |
+| API field semantics / request-response shape | official docs via the bundled documentation helper | "What does `recall_mode` accept" |
+| Purchase / billing / pricing / quota | official docs via the bundled documentation helper | "How do I upgrade my plan" |
+| Console UI path / where to click | official docs via the bundled documentation helper | "Where do I configure boost/bury" |
 
-Do not default to `vs --help` for product-concept questions; CLI help does not define product concepts. Do not default to docs for "what does this flag do"; the installed CLI is authoritative for command behavior.
+Do not use `vs --help` to answer product-concept questions. Do not use docs to explain command flags when the installed CLI can answer directly.
 
-## Knowledge Source
+## Knowledge Sources
 
 ### CLI source
 
-Allowed CLI source commands include:
+Allowed CLI checks include:
 
 - `vs --help`
 - `vs <cmd> --help`
@@ -77,23 +73,41 @@ Allowed CLI source commands include:
 - `vs skill search <query>`
 - `vs skill show <name>`
 
-Before recommending a command or flag, validate that it exists through `vs skill list`, `vs <domain> --help`, or `vs <cmd> --help`.
+Before recommending any command or flag, verify that it exists through `vs skill list`, `vs <domain> --help`, or `vs <cmd> --help`.
 
 ### Documentation source
 
-Root URL: `https://www.volcengine.com/docs/85296/1544972?lang=en`
+This skill includes a private bundled documentation helper under [references/volcengine-documentation/SKILL.md](references/volcengine-documentation/SKILL.md). Use it only as an internal sub-workflow of `vs-product-qa`. Do not expose it as a separate skill, and do not ask the user to install, trigger, or switch to it.
 
-Source acquisition protocol:
+Use the helper only for official Volcengine documentation, with these fixed rules:
 
-1. Primary path: fetch the root URL, parse the sidebar `<a href>` list, identify the target sub-page, fetch that sub-page, and extract the relevant body text.
-2. Fallback path: if sub-page extraction fails because of selector changes, network errors, or timeout, return the root URL and tell the user to browse manually. Do not guess sub-page URLs.
+- base root URL: `https://www.volcengine.com/docs/85296/1544972`
+- Chinese questions use `https://www.volcengine.com/docs/85296/1544972?lang=cn`
+- non-Chinese questions use `https://www.volcengine.com/docs/85296/1544972?lang=en`
+- stay within that root page and its child pages only
+- do not access sibling product pages, other documentation roots, site-wide search, homepage navigation, or external sites
+- do not switch between `?lang=cn` and `?lang=en` in the same answer unless the user's language changes in a later turn
+
+For Viking AI Search documentation lookup, the data-source restriction is hard:
+
+- product code is `Universal AI Search`
+- the helper script's `search` action must use `ServiceCodes="Universal AI Search"`
+- the helper script's `fetch` action must use URLs under `https://www.volcengine.com/docs/85296` only
+
+Documentation lookup protocol:
+
+1. Choose the root URL by the user's language.
+2. If the page URL is already known, or the user provides a page URL under the allowed root, use the helper script's `fetch` action first.
+3. Otherwise, use the helper script's `search` action with `ServiceCodes="Universal AI Search"`.
+4. After identifying the correct page under the same subtree, use `fetch` to retrieve the full page content and extract the relevant section.
+5. If exact sub-page lookup fails because of selector change, network error, or timeout, return the selected root URL and tell the user to browse manually. Do not guess sub-page URLs.
 
 Fetch budget:
 
-- Up to 3 fetches per answer.
-- Up to 5 seconds per fetch.
-- Total budget is 15 seconds or less.
-- On timeout or overrun, degrade honestly and cite the root URL.
+- at most 3 fetches per answer
+- at most 5 seconds per fetch
+- total budget 15 seconds or less
+- on timeout or overrun, degrade honestly and cite the root URL
 
 Not used in MVP:
 
@@ -101,30 +115,31 @@ Not used in MVP:
 - `https://www.volcengine.com/sitemap.xml`
 - undocumented per-page markdown endpoints
 
-These may be used later only if they become publicly available and are actually fetched during the turn.
+These may be used later only if they become publicly available and are actually fetched during the current turn.
 
 ## Commands
 
-- `doctor`: inspect local CLI environment and service readiness for local troubleshooting.
-- `auth status`: inspect local Viking AK/SK auth state.
-- `llm status`: inspect local LLM auth state when the question involves LLM-backed features.
-- `skill list`: list installed skills before recommending a handoff.
-- `skill search`: find a relevant installed skill before recommending a handoff.
-- `skill show`: inspect another skill's documented workflow before delegating.
-- `vs <cmd> --help`: inspect command-specific usage and flags. This is a source rule, not a frontmatter command entry.
+- `doctor`: inspect local CLI environment and service readiness
+- `auth status`: inspect local Viking AK/SK auth state
+- `llm status`: inspect local LLM auth state for LLM-backed features
+- `skill list`: list installed skills before recommending handoff
+- `skill search`: find a relevant installed skill before recommending handoff
+- `skill show`: inspect another skill's workflow before delegating
+- `vs <cmd> --help`: inspect command usage and flags; this is a source rule, not a frontmatter command entry
 
 ## Workflow
 
-1. Classify the question using **Question Routing** before choosing a source.
-2. Fetch from the chosen source:
-   - CLI route: run the relevant `vs ... --help`, status, doctor, or skill command.
-   - Local CLI error route: use the error's own recovery output from this turn first; only run help/status commands if the recovery output is missing or ambiguous.
-   - Docs route: follow the documentation source acquisition protocol.
-3. Extract only the relevant section or output lines needed to answer.
-4. Answer in the required output format.
-5. If write operations such as `apply`, `update`, `create`, or `bind` are mentioned, explain only the safe dry-run or draft path unless the user explicitly asks to run a specialized workflow. This skill must not execute write commands.
-6. If credentials, environment variables, or `vs auth import-env` are involved, append the AK/SK security notice from [references/aksk-notice.md](references/aksk-notice.md).
-7. If no source can answer, say `unknown` and explicitly state that the checked `vs` help or official documentation does not cover this point; cite the root documentation URL or the CLI command checked, and suggest support ticket / oncall escalation.
+1. Classify the question using **Question Routing**.
+2. Pick the source:
+   - CLI usage -> run the relevant `vs ... --help`
+   - local auth / environment -> use `vs auth status`, `vs doctor`, or `vs llm status`
+   - local CLI error -> use the recovery output from this turn first; only run more CLI checks if needed
+   - product docs -> use the bundled documentation helper privately, with the hard `Universal AI Search` + `docs/85296` restriction
+3. Extract only the lines or sections needed to answer.
+4. Respond using the required output format.
+5. If the topic involves credentials, environment variables, or `vs auth import-env`, append the AK/SK security notice from [references/aksk-notice.md](references/aksk-notice.md).
+6. If the request implies write operations such as `apply`, `update`, `create`, or `bind`, explain only the safe draft or dry-run path unless the user explicitly switches to the correct execution workflow.
+7. If no grounded source can answer, return `unknown`, cite the checked CLI command or documentation root URL, and suggest support-ticket / oncall escalation.
 
 ## Output Format
 
@@ -139,23 +154,28 @@ Use this structure and omit fields that have no grounded content:
 
 Rules:
 
-- For CLI-usage questions, `Source` cites the command whose output was used.
-- For doc-grounded answers, `Source` must be a real URL retrieved during this turn.
-- Do not fill missing fields with speculation.
-- Do not paste large documentation blocks; summarize in your own words and link the source.
+- for CLI-usage questions, `Source` cites the command output used in this turn
+- for doc-grounded answers, `Source` must be a real URL retrieved in this turn
+- do not fill missing fields with speculation
+- do not paste large documentation blocks; summarize in your own words and link the source
 
 ## Constraints
 
-1. **Grounded**: every factual claim must cite either CLI output from this turn or an official documentation URL retrieved in this turn. Do not answer product-specific questions from training memory.
-2. **No fabricated URLs**: sub-page URLs must come from sidebar parsing or another routing source actually fetched during this turn. Do not guess URL paths.
-3. **No CLI hallucination**: do not recommend commands or flags that do not exist. Validate via `vs skill list`, `vs <domain> --help`, or `vs <cmd> --help` first.
-4. **CLI overrides docs**: if CLI help and docs disagree, trust the installed CLI and say the docs may be stale.
-5. **No silent execution**: do not run write commands such as `apply`, `update`, `create`, or `bind` on the user's behalf. Emit explanations, drafts, or dry-run guidance only.
-6. **AK/SK notice**: whenever credentials, environment variables, or `vs auth import-env` are involved, append the AK/SK security notice from [references/aksk-notice.md](references/aksk-notice.md).
-7. **Honest unknowns**: if all available sources cannot answer, return `unknown`, explicitly say the checked `vs` help or official documentation does not cover the point, and include the root documentation URL or a support-ticket / oncall suggestion. Do not fabricate.
-8. **Honest fallback**: if exact sub-page lookup fails and the answer falls back to the chapter root, explicitly say: "exact sub-page lookup failed; here is the chapter root."
-9. **No large doc dumps**: summarize in your own words and link the source instead of pasting long documentation sections.
-10. **Delegation**: if the user asks for sign-up / purchase, item onboarding, or search tuning execution, hand off using [references/delegation.md](references/delegation.md) instead of answering inside this skill.
+1. **Grounded only**: every factual claim must cite either CLI output from this turn or an official documentation URL retrieved in this turn.
+2. **No memory answers**: do not answer Viking AI Search product questions from training memory.
+3. **No fabricated URLs**: sub-page URLs must come from routing actually performed in this turn. Do not guess paths.
+4. **No CLI hallucination**: do not recommend commands or flags that do not exist.
+5. **CLI overrides docs**: when CLI help and documentation conflict, trust the installed CLI and say the docs may be stale.
+6. **No silent execution**: do not run write commands such as `apply`, `update`, `create`, or `bind` on the user's behalf.
+7. **AK/SK notice required**: whenever credentials or `vs auth import-env` are involved, append the AK/SK security notice.
+8. **Honest unknowns**: if available sources cannot answer, say `unknown`, explain what source was checked, and suggest escalation.
+9. **Honest fallback**: if exact sub-page lookup fails, explicitly say: "exact sub-page lookup failed; here is the chapter root."
+10. **No large doc dumps**: summarize rather than pasting long documentation blocks.
+11. **Bundled helper only**: use the documentation helper only inside `vs-product-qa`; do not expose it as a standalone skill.
+12. **Language-aware docs**: use `?lang=cn` for Chinese questions and `?lang=en` for non-Chinese questions.
+13. **Strict doc scope**: only access `https://www.volcengine.com/docs/85296/1544972` and its child pages in the same subtree.
+14. **Hard source restriction**: for Viking AI Search docs, `search` must use `ServiceCodes="Universal AI Search"`, and `fetch` must stay under `https://www.volcengine.com/docs/85296`.
+15. **Delegate specialized workflows**: use [references/delegation.md](references/delegation.md) when the user actually needs onboarding, item workflow execution, or tuning execution.
 
 ## Delegation
 
@@ -184,8 +204,11 @@ Expected shape:
 User: "What is a scene in Viking AI Search?"
 
 1. Classify as product concept.
-2. Fetch the documentation root, parse sidebar links, fetch the relevant sub-page if found.
-3. Answer using only retrieved documentation.
+2. Use the bundled documentation helper privately inside `vs-product-qa`.
+3. Choose the documentation root by user language: `?lang=cn` for Chinese, otherwise `?lang=en`.
+4. Run the helper script's `search` action with `ServiceCodes="Universal AI Search"`.
+5. Use the helper script's `fetch` action only if the chosen page URL stays under `https://www.volcengine.com/docs/85296`.
+6. Answer using only retrieved documentation.
 
 ### Delegation question
 
@@ -197,3 +220,4 @@ Answer: "This is covered by `vs-user-onboarding` because it is a sign-up, purcha
 
 - AK/SK security notice: [references/aksk-notice.md](references/aksk-notice.md)
 - Delegation matrix: [references/delegation.md](references/delegation.md)
+- Bundled documentation helper: [references/volcengine-documentation/SKILL.md](references/volcengine-documentation/SKILL.md)
