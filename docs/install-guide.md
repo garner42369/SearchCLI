@@ -4,42 +4,47 @@
 
 ## 0. 基本约定
 
-- Search CLI 的底层二进制文件名称和命令前缀均使用 `vs`，例如 `vs-macos-arm64`、`vs-linux-x64`、`vs-win-x64.exe`。
+- Search CLI 的命令前缀统一为 `vs`，安装完成后即可直接调用。
 - 相关的环境变量始终以 `VIKING_` 开头，例如 `VIKING_AK`、`VIKING_SK`、`VIKING_CONTROL_PLANE_BASE_URL`、`VIKING_DATA_PLANE_BASE_URL`、`VIKING_REGION`。
 - `vs` 同时维护两个 base URL：
   - **控制面 (control plane)**：OpenAPI 管控类调用，例如 `app create/list/get`、`dataset create/list`、`auth status`、`doctor` 等。
   - **数据面 (data plane)**：运行时数据类调用，例如 `search run`、`chat run`、`recommend run`、`data write/list/get/delete`、`search tune` 的实跑环节、`query_completion` 等。
-- 任何底层二进制命令（包括 `--help`、`skill install`、环境变量检查、`auth`、`doctor`）都不要在 sandbox 里执行。如果你当前拿不到宿主机真实终端权限，请先停下来说明，不要继续尝试。
+- 任何 `vs` 命令（包括 `--help`、`skill install`、环境变量检查、`auth`、`doctor`）都不要在 sandbox 里执行。如果你当前拿不到宿主机真实终端权限，请先停下来说明，不要继续尝试。
 
 ## 1. 前置假设
 
 1. 这台电脑之前没有安装过 Search CLI。
-2. 我已经下载好了当前操作系统对应的底层二进制文件，文件名中包含 `vs`。
-   - 如果你不知道这个二进制文件的路径，**只能先问我**，不能猜，也不能全盘搜索。
-3. 在进入第 7 步「全局化建议」之前，必须**始终使用二进制的绝对路径**执行命令。
-   - 不要 clone 仓库。
-   - 不要修改 PATH。
-   - 不要复制或重命名二进制。
-   - 不要尝试把它安装成全局命令。
+2. 宿主机已经具备以下基础环境：
+   - `git`
+   - Node.js **20 或更新版本**
+   - `npm`
+   - 如果其中任何一项缺失，请先停下来提示我安装，不要绕过。
+3. 安装来源固定为 GitHub 官方仓库：`https://github.com/volcengine/SearchCLI`。
+   - 不要从其他渠道下载预编译二进制文件。
+   - 不要尝试手动复制 / 改名某个 `vs` 二进制。
 
 ## 2. 不同操作系统的命令风格
 
 ### 2.1 Windows PowerShell
 
-始终使用如下形式：
+直接调用 `vs`，安装脚本会通过 `npm install --global` 把它注册为全局命令：
 
 ```powershell
-& "<二进制绝对路径>" --help
-& "<二进制绝对路径>" skill install all
+vs --help
+vs skill list
 ```
+
+如果 PowerShell 不识别 `vs`，请先确认 npm 全局 bin 目录已加入 PATH（参考 `npm config get prefix`）。
 
 ### 2.2 macOS / Linux
 
-直接用二进制绝对路径执行命令。在首次执行任何命令前，先确保拥有执行权限：
+直接执行 `vs` 命令即可：
 
 ```bash
-chmod +x <二进制绝对路径>
+vs --help
 ```
+
+如果 shell 提示 `command not found: vs`，请确认 `$(npm config get prefix)/bin` 已经在 `PATH` 中。
 
 ## 3. 部署环境预检（执行任何 `vs` 命令前必问）
 
@@ -82,25 +87,123 @@ chmod +x <二进制绝对路径>
 
 记下 `<CONTROL_PLANE_BASE_URL>` / `<DATA_PLANE_BASE_URL>` 与 `<REGION>`，后续 `auth login` / `auth import-env` 都要带上。
 
-## 4. 基础检查与 Skill 安装
+## 4. 从 GitHub 安装 Search CLI
 
-按顺序执行以下两条命令：
+### 4.1 Clone 仓库并运行安装脚本
 
-### 4.1 帮助信息自检
-
-```bash
-<二进制绝对路径> --help
-```
-
-> **macOS 注意**：如果该命令执行后 10 秒内没有任何输出，可能是被系统 Gatekeeper 拦截。请立即停止等待，并提示我进入「系统设置 → 隐私与安全性」中允许运行，等待我处理完再继续。
-
-### 4.2 安装全部 skill
+在宿主机的真实终端里执行：
 
 ```bash
-<二进制绝对路径> skill install all --json
+git clone https://github.com/volcengine/SearchCLI.git vs
+cd vs
+bash ./scripts/install.sh
 ```
+
+如果你更习惯使用 SSH：
+
+```bash
+git clone git@github.com:volcengine/SearchCLI.git vs
+cd vs
+bash ./scripts/install.sh
+```
+
+`scripts/install.sh` 会完成下列动作：
+
+- 校验 Node.js 版本（要求 `>= 20`）。
+- `npm install` 安装依赖。
+- `npm run validate:skills` 与 `npm run build` 校验并构建 dist。
+- `npm install --global .` 将 `vs` 注册为全局命令。
+
+> Windows 用户请在 Git Bash / WSL 中执行 `bash ./scripts/install.sh`，或参考仓库 README 使用等价的 `npm` 步骤。
+
+### 4.2 帮助信息自检
+
+```bash
+vs --help
+```
+
+> **macOS 注意**：若是首次安装，且该命令执行后 10 秒内仍没有任何输出，可能是被系统 Gatekeeper 拦截。请立即停止等待，并提示我进入「系统设置 → 隐私与安全性」中允许运行，等待我处理完再继续。
+
+### 4.3 安装 skill（必须先确认安装目标）
+
+`vs skill install` 会把 Viking skill 文件拷贝到不同 agent 客户端的 skill 目录下。**不要直接执行 `vs skill install all`，这会把 skill 写入用户用不上的 agent 目录里**。请先向我确认这台电脑上**实际在用的 agent 客户端**，再按目标显式传入 `--target`。
+
+#### 4.3.1 询问目标客户端
+
+请先问我：
+
+> 「请问您希望把 Viking skill 安装给哪些 agent 客户端使用？支持以下几种，可多选：
+> - `codex`：写入 `$CODEX_HOME/skills`，默认 `~/.codex/skills`
+> - `agents`：写入 `$AGENTS_HOME/skills`，默认 `~/.agents/skills`
+> - `trae`：写入 `$TRAE_HOME/skills`，默认 `~/.trae/skills`
+> - `trae-cn`：写入 `$TRAE_CN_HOME/skills`，默认 `~/.trae-cn/skills`
+> - `global`：仅安装到当前已经存在的上述目录（如果都不存在则不安装）」
+
+如果我答不上来，请**先停下**，让我自己确认正在使用的 agent 客户端，不要替我猜。
+
+#### 4.3.2 按选择执行安装
+
+确认后，使用对应的 `--target` 调用：
+
+```bash
+# 单一目标示例
+vs skill install all --target trae-cn --json
+vs skill install all --target codex   --json
+vs skill install all --target agents  --json
+vs skill install all --target trae    --json
+
+# 仅安装到当前已存在的 agent 目录（保守做法）
+vs skill install all --target global --json
+```
+
+如果我同时使用多个客户端，请**逐个 target 分别执行一次**，而不是一次性覆盖到全部目录。
 
 > 该命令需要联网下载，可能耗时较长，请耐心等待其完成，不要强行打断。
+
+#### 4.3.3 仅安装少量 skill（可选）
+
+如果我只需要其中部分 skill，可以列出名称代替 `all`，例如：
+
+```bash
+vs skill install vs-shared vs-search --target trae-cn --json
+```
+
+可以通过下列命令先查看仓库内可用的 skill：
+
+```bash
+vs skill list --json
+```
+
+#### 4.3.4 权限问题兜底（必读）
+
+`vs skill install` 在写入 `~/.codex/skills`、`~/.agents/skills`、`~/.trae/skills`、`~/.trae-cn/skills` 等目录时，可能因为以下原因出现权限错误（常见错误关键字：`EACCES`、`permission denied`、`EPERM`、`mkdir … not permitted`）：
+
+- 目标目录由其他用户或 `sudo` 创建，当前用户无写入权限。
+- 目录归属于受系统保护的位置，或被 IDE / agent 客户端锁定。
+- 在沙箱 / 受限执行环境下没有访问宿主机用户目录的权限。
+
+遇到权限问题时**不要尝试自动 `sudo` 或修改文件归属**，必须**停下来，把命令交给我手动执行**：
+
+1. 先把失败的完整命令原样贴出来，例如：
+
+   ```bash
+   vs skill install all --target trae-cn --json
+   ```
+
+2. 提示我「请您在自己的真实终端里手动执行上面的命令；如果仍报权限错误，可改用以下任一方式自行处理：」
+
+   ```bash
+   # 方式 A：先修复目标目录归属（按需把 trae-cn 换成你实际选择的 target 目录）
+   sudo chown -R "$USER" ~/.trae-cn/skills
+   vs skill install all --target trae-cn --json
+
+   # 方式 B：用一次性的 sudo 直接执行安装
+   sudo -E env "PATH=$PATH" vs skill install all --target trae-cn --json
+   ```
+
+3. 等我回复「已执行完成」后，再继续后续步骤；在我确认之前，**不要替我重试，也不要跳过 skill 安装直接进入下一步**。
+
+如果是非交互式 / 沙箱环境，连提示都无法等到我回复，请直接停止任务并向我说明：「skill 安装因权限受阻，需要您在宿主机真实终端手动执行 `vs skill install ... --target <target>`，完成后再继续。」
 
 ## 5. 授权流程（按优先级处理）
 
@@ -126,7 +229,7 @@ export VIKING_REGION=<REGION>
 然后执行：
 
 ```bash
-<二进制绝对路径> auth import-env
+vs auth import-env
 ```
 
 `auth import-env` 会一并把这些环境变量持久化进 `~/.viking/config.json`（`controlPlaneBaseUrl` / `dataPlaneBaseUrl` / `environmentId`）。
@@ -138,7 +241,7 @@ export VIKING_REGION=<REGION>
 #### 5.3.1 交互式 TTY：使用 `auth login`
 
 ```bash
-<二进制绝对路径> auth login [--control-plane-base-url <CONTROL_PLANE_BASE_URL>] [--data-plane-base-url <DATA_PLANE_BASE_URL>] [--region <REGION>]
+vs auth login [--control-plane-base-url <CONTROL_PLANE_BASE_URL>] [--data-plane-base-url <DATA_PLANE_BASE_URL>] [--region <REGION>]
 ```
 
 - 仅在第 3 步用户选择了非默认环境时才追加 `--control-plane-base-url` / `--data-plane-base-url` / `--region`。也可以只传 `--base-url <CONTROL or DATA>`，CLI 会按内置环境表自动补齐另一面。
@@ -162,7 +265,7 @@ export VIKING_REGION=<REGION>
 等我回复「已设置完成」后，再执行：
 
 ```bash
-<二进制绝对路径> auth import-env
+vs auth import-env
 ```
 
 ### 5.4 环境变量读取兜底
@@ -170,7 +273,7 @@ export VIKING_REGION=<REGION>
 如果你发现你的执行环境无法读取到我手动设置的环境变量，请指导我在当前真实终端里手动执行一次：
 
 ```bash
-<二进制绝对路径> auth import-env
+vs auth import-env
 ```
 
 然后再由你接管后续流程。
@@ -184,9 +287,9 @@ export VIKING_REGION=<REGION>
 ### 6.1 依次执行验证命令
 
 ```bash
-<二进制绝对路径> auth status --json
-<二进制绝对路径> doctor --json
-<二进制绝对路径> skill list --json
+vs auth status --json
+vs doctor --json
+vs skill list --json
 ```
 
 并展示关键结果。
@@ -218,12 +321,12 @@ export VIKING_REGION=<REGION>
 重点核对 `auth status --json` 输出中的 `controlPlaneBaseUrl`、`dataPlaneBaseUrl` 与 `region` 字段：
 
 - 如果与第 3 步收集的 `<CONTROL_PLANE_BASE_URL>` / `<DATA_PLANE_BASE_URL>` / `<REGION>` **完全一致**，进入第 7 步。
-- 如果**不一致**，立刻停下来，提示我使用下方任一方式修正，并在修正后**重新执行** `auth status --json`，直到完全一致才能继续。
+- 如果**不一致**，立刻停下来，提示我使用下方任一方式修正，并在修正后**重新执行** `vs auth status --json`，直到完全一致才能继续。
 
 #### 方式 A · 重新登录覆盖（推荐持久化）
 
 ```bash
-<二进制绝对路径> auth login --control-plane-base-url <CONTROL_PLANE_BASE_URL> --data-plane-base-url <DATA_PLANE_BASE_URL> --region <REGION>
+vs auth login --control-plane-base-url <CONTROL_PLANE_BASE_URL> --data-plane-base-url <DATA_PLANE_BASE_URL> --region <REGION>
 ```
 
 > 简便写法：只传 `--base-url <CONTROL or DATA>`，CLI 会按内置环境表自动补齐另一面。
@@ -235,40 +338,48 @@ export VIKING_CONTROL_PLANE_BASE_URL=<CONTROL_PLANE_BASE_URL>
 export VIKING_DATA_PLANE_BASE_URL=<DATA_PLANE_BASE_URL>
 export VIKING_REGION=<REGION>
 # 或者只导出兼容变量：export VIKING_BASE_URL=<CONTROL or DATA>
-<二进制绝对路径> auth import-env
+vs auth import-env
 ```
 
 #### 方式 C · 多环境隔离（推荐同时维护多套环境）
 
 ```bash
-<二进制绝对路径> auth login --profile <env-name> --control-plane-base-url <CONTROL_PLANE_BASE_URL> --data-plane-base-url <DATA_PLANE_BASE_URL> --region <REGION>
-<二进制绝对路径> auth use <env-name>
+vs auth login --profile <env-name> --control-plane-base-url <CONTROL_PLANE_BASE_URL> --data-plane-base-url <DATA_PLANE_BASE_URL> --region <REGION>
+vs auth use <env-name>
 ```
 
-## 7. 全局化建议（非常重要）
+## 7. 安装后自检与升级
 
-第 6 步全部验证通过后，你必须主动向我提出以下建议：
+`scripts/install.sh` 已经通过 `npm install --global .` 把 `vs` 注册为全局命令，正常情况下你可以在任意终端里直接调用 `vs`。
 
-> 「目前只能通过绝对路径调用 `vs`。为了后续在其他终端或新的 AI 会话中也能直接使用 `vs` 命令，建议将该二进制移动到系统 PATH 目录（例如 macOS/Linux 下的 `/usr/local/bin/vs`）。请问是否需要我帮您执行此全局安装操作？」
+### 7.1 `vs` 不在 PATH 中
 
-### 7.1 我回答「是」
-
-提供并执行对应操作。
-
-#### macOS / Linux 示例
+如果在新终端里执行 `vs` 显示「command not found」（或 PowerShell 不识别 `vs`），请提示我执行：
 
 ```bash
-sudo mv <二进制绝对路径> /usr/local/bin/vs
-sudo chmod +x /usr/local/bin/vs
+npm config get prefix
 ```
 
-#### Windows 示例
+并把返回路径下的 `bin`（macOS / Linux）或安装目录（Windows）加入 `PATH` 后重新打开终端。
 
-指导我把二进制所在目录加入 PATH，或把二进制改名为 `vs.exe` 并移入已在 PATH 中的目录。
+### 7.2 升级到最新版本
 
-### 7.2 我回答「否」
+后续要升级时，回到 clone 出来的仓库目录执行：
 
-本轮任务结束。
+```bash
+git pull
+bash ./scripts/install.sh
+```
+
+`install.sh` 会重新构建并通过 `npm install --global .` 覆盖旧版本。
+
+### 7.3 卸载
+
+```bash
+npm uninstall --global viking-cli
+```
+
+> 包名取自仓库 `package.json` 中的 `name` 字段（当前为 `viking-cli`）。如果不确定，可执行 `npm ls -g --depth=0` 查看已全局安装的包。
 
 ## 8. 失败处理
 
@@ -281,5 +392,6 @@ sudo chmod +x /usr/local/bin/vs
 
 ### 8.1 特别约束
 
-- 如果 `auth status --json` 中的 `controlPlaneBaseUrl` / `dataPlaneBaseUrl` / `region` 与第 3 步声明的目标不一致，必须当作失败处理，停止后续步骤直到修正完成。
-- 如果 `doctor --json` 中任何 `ok: false` 项与地址、鉴权相关，按 6.3 中的方式 A / B 重试，不要跳过。
+- 如果 `vs auth status --json` 中的 `controlPlaneBaseUrl` / `dataPlaneBaseUrl` / `region` 与第 3 步声明的目标不一致，必须当作失败处理，停止后续步骤直到修正完成。
+- 如果 `vs doctor --json` 中任何 `ok: false` 项与地址、鉴权相关，按 6.3 中的方式 A / B 重试，不要跳过。
+- 如果 `bash ./scripts/install.sh` 失败，先检查 Node.js 版本（必须 `>= 20`）以及网络是否能访问 `npmjs.org` 与 `github.com`，再决定是否重试。
