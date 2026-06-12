@@ -6,26 +6,74 @@ from urllib.parse import urlparse
 
 API_BASE = "https://docs-api.cn-beijing.volces.com/api/v1/doc"
 REQUEST_TIMEOUT = 15  # 15-second timeout to avoid hanging forever
+UNIVERSAL_AI_SEARCH_SERVICE_CODE = "Universal AI Search"
+UNIVERSAL_AI_SEARCH_SERVICE_CODE_NORMALIZED = UNIVERSAL_AI_SEARCH_SERVICE_CODE.lower()
+ALLOWED_DOC_HOST = "www.volcengine.com"
+ALLOWED_DOC_PREFIX = "/docs/85296"
 
 # Negative keyword filtering has been removed; all queries are allowed by default
 
+
+def normalize_service_codes(service_codes):
+    if not service_codes:
+        return [UNIVERSAL_AI_SEARCH_SERVICE_CODE]
+    normalized = []
+    for code in service_codes:
+        trimmed = code.strip()
+        if trimmed:
+            normalized.append(trimmed)
+    return normalized or [UNIVERSAL_AI_SEARCH_SERVICE_CODE]
+
+
+def is_allowed_universal_ai_search_url(doc_url):
+    parsed = urlparse(doc_url)
+    return parsed.scheme in {"http", "https"} and parsed.netloc == ALLOWED_DOC_HOST and parsed.path.startswith(ALLOWED_DOC_PREFIX)
+
+
+def filter_universal_ai_search_doc_list(doc_list):
+    filtered = []
+    for doc in doc_list:
+        if not isinstance(doc, dict):
+            continue
+        url = doc.get("Url")
+        service_codes = [str(code).lower() for code in doc.get("ServiceCodes", []) if isinstance(code, str)]
+        if isinstance(url, str) and is_allowed_universal_ai_search_url(url) and UNIVERSAL_AI_SEARCH_SERVICE_CODE_NORMALIZED in service_codes:
+            filtered.append(doc)
+    return filtered
+
 def search(query, limit=10, service_codes=None):
     """Search Volcengine official documentation."""
+    normalized_service_codes = normalize_service_codes(service_codes)
+    if normalized_service_codes != [UNIVERSAL_AI_SEARCH_SERVICE_CODE]:
+        return {"error": "Only ServiceCodes=\"Universal AI Search\" is allowed for Viking AI Search documentation lookup"}
+
     url = f"{API_BASE}/search"
     payload = {
         "Query": query,
-        "Limit": limit
+        "Limit": limit,
+        "ServiceCodes": [UNIVERSAL_AI_SEARCH_SERVICE_CODE]
     }
-    if service_codes:
-        payload["ServiceCodes"] = service_codes
-    
+
     headers = {
         "Content-Type": "application/json"
     }
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
-        return response.json()
+        result = response.json()
+        doc_list = (
+            result.get("Result", {}).get("DocList", [])
+            if isinstance(result, dict) and isinstance(result.get("Result"), dict)
+            else []
+        )
+        filtered = filter_universal_ai_search_doc_list(doc_list)
+        if isinstance(result, dict) and isinstance(result.get("Result"), dict):
+            result["Result"]["DocList"] = filtered
+            result["Result"]["FilteredBy"] = {
+                "ServiceCodes": [UNIVERSAL_AI_SEARCH_SERVICE_CODE],
+                "UrlPrefix": f"https://{ALLOWED_DOC_HOST}{ALLOWED_DOC_PREFIX}"
+            }
+        return result
     except Exception as e:
         return {"error": f"Search request failed: {str(e)}"}
 
@@ -34,6 +82,8 @@ def fetch(doc_url):
     parsed = urlparse(doc_url)
     # Strip query parameters and fragments so the request always uses a clean page URL.
     clean_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+    if not is_allowed_universal_ai_search_url(clean_url):
+        return {"error": f"Fetch is only allowed for URLs under https://{ALLOWED_DOC_HOST}{ALLOWED_DOC_PREFIX}"}
     
     url = f"{API_BASE}/fetch"
     payload = {
@@ -61,7 +111,7 @@ def print_help():
                 "action": "search",
                 "desc": "Search Volcengine documentation",
                 "params": "<query> [limit] [service_code_1,service_code_2...]",
-                "example": 'python volcengine_docs.py search "what is Viking AI Search scene" 3 aisearch'
+                "example": 'python volcengine_docs.py search "what is Viking AI Search scene" 3 "Universal AI Search"'
             },
             {
                 "action": "fetch",
@@ -69,7 +119,11 @@ def print_help():
                 "params": "<volcengine_documentation_url>",
                 "example": 'python volcengine_docs.py fetch "https://www.volcengine.com/docs/85296/1544972?lang=zh"'
             }
-        ]
+        ],
+        "constraints": {
+            "service_code": UNIVERSAL_AI_SEARCH_SERVICE_CODE,
+            "url_prefix": f"https://{ALLOWED_DOC_HOST}{ALLOWED_DOC_PREFIX}"
+        }
     }
     print(json.dumps(help_info, ensure_ascii=False, indent=2))
 
@@ -83,11 +137,11 @@ if __name__ == "__main__":
     
     if action == "search":
         if len(sys.argv) < 3:
-            result = {"error": "Missing query", "help": "Usage: python volcengine_docs.py search <query> [limit] [service_code_1,service_code_2...]"}
+            result = {"error": "Missing query", "help": "Usage: python volcengine_docs.py search <query> [limit] [service_code_1,service_code_2...]; use \"Universal AI Search\" only"}
         else:
             query = sys.argv[2]
             limit = 10
-            service_codes = None
+            service_codes = [UNIVERSAL_AI_SEARCH_SERVICE_CODE]
             if len(sys.argv) >=4:
                 try:
                     limit = int(sys.argv[3])
@@ -101,7 +155,7 @@ if __name__ == "__main__":
     
     elif action == "fetch":
         if len(sys.argv) < 3:
-            result = {"error": "Missing document URL", "help": "Usage: python volcengine_docs.py fetch <volcengine_documentation_url>"}
+            result = {"error": "Missing document URL", "help": "Usage: python volcengine_docs.py fetch <volcengine_documentation_url>; URL must stay under https://www.volcengine.com/docs/85296"}
         else:
             doc_url = sys.argv[2]
             result = fetch(doc_url)
