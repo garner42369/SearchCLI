@@ -4,7 +4,7 @@
 
 # SearchCLI
 
-[English](README.md) | [简体中文](README.zh_CN.md) | 日本語 | [Deutsch](README.de_DE.md) | [한국어](README.ko_KR.md) | [Français](README.fr_FR.md) | [Русский](README.ru_RU.md) | [Italiano](README.it_IT.md) | [Español](README.es_ES.md) | [Português](README.pt_BR.md) | [Türkçe](README.tr_TR.md)
+[English](README.md) | [简体中文](README.zh_CN.md) | 日本語 | [Deutsch](README.de_DE.md) | [한국어](README.ko_KR.md) | [Français](README.fr_FR.md) | [Русский](README.ru_RU.md) | [Italiano](README.it_IT.md) | [Español](README.es_ES.md) | [Português](README.pt_BR.md) | [Türkçe](README.tr_TR.md) | [ไทย](README.th_TH.md)
 
 安定して調整可能な検索、推薦、会話型検索を Agent システムや業務システムに接続します。
 
