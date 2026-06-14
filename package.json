@@ -21,6 +21,7 @@
     "README.pt_BR.md",
     "README.tr_TR.md",
     "README.th_TH.md",
+    "README.id_ID.md",
     "package.json"
   ],
   "engines": {
